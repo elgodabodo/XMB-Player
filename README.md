@@ -20,7 +20,7 @@ Its kinda based on the ps3 XMB but bad and vibe coded to hell
 
 ### 🪟 Windows
 1.  **Download:** Grab the `.exe` from the [Releases](link-to-releases) page.
-2.  **Move:** into any folder. It's fully portable.
+2.  **Move:** Into any folder. It's fully portable.
 3.  **Run:** Open the folder and run the application.
 
 ---
