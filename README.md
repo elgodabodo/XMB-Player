@@ -1,6 +1,6 @@
 # [XMB-Player]
 
-Its like the ps3 XMB but bad and vibe coded to hell
+Its like the ps3 XMB but bad and vibe coded to hell very broken right now wait for fix
 
 | Home Screen |
 | :---: |
