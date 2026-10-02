@@ -1,0 +1,39 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build and Publish Vite App
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        # Using install instead of ci since there is no lockfile in the repo yet
+        run: npm install 
+
+      - name: Build the project
+        run: npm run build
+
+      - name: Archive build artifacts
+        # Zips only the compiled frontend assets from Vite
+        run: cd dist && zip -r ../release-build.zip .
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v3
+        with:
+          files: release-build.zip
+          generate_release_notes: true
