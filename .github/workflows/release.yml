@@ -1,4 +1,4 @@
-name: Build and Release Linux AppImage
+name: Build and Release Cross-Platform Desktop App
 
 on:
   push:
@@ -12,11 +12,24 @@ on:
         default: 'v1.0.0'
 
 jobs:
-  build-appimage:
-    name: Build Linux AppImage
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: Linux AppImage
+            builder_flag: --linux appimage
+          - os: windows-latest
+            target: Windows Portable (.exe)
+            builder_flag: --win portable
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout source code
@@ -42,10 +55,7 @@ jobs:
           const { contextBridge, ipcRenderer } = require('electron');
 
           contextBridge.exposeInMainWorld('api', {
-            // Run a shell command (e.g., terminal commands, binaries, scripts)
             runCommand: (command) => ipcRenderer.invoke('run-command', command),
-            
-            // Open a file or folder using Linux default application
             openFile: (filePath) => ipcRenderer.invoke('open-file', filePath)
           });
           EOF
@@ -56,6 +66,11 @@ jobs:
           const { exec } = require('child_process');
           const path = require('path');
 
+          // Redirect app data and configs to a local 'data' folder alongside the .exe
+          if (process.env.PORTABLE_EXECUTABLE_DIR) {
+            app.setPath('userData', path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'data'));
+          }
+
           function createWindow() {
             const win = new BrowserWindow({
               title: "XMB Player",
@@ -63,7 +78,7 @@ jobs:
               height: 720,
               autoHideMenuBar: true,
               webPreferences: {
-                preload: path.join(__dirname, 'preload.cjs'), // Attach preload script
+                preload: path.join(__dirname, 'preload.cjs'),
                 nodeIntegration: false,
                 contextIsolation: true
               }
@@ -73,7 +88,6 @@ jobs:
             win.loadFile(path.join(__dirname, 'dist/index.html'));
           }
 
-          // Handle running terminal commands from frontend
           ipcMain.handle('run-command', async (event, command) => {
             return new Promise((resolve, reject) => {
               exec(command, (error, stdout, stderr) => {
@@ -87,7 +101,6 @@ jobs:
             });
           });
 
-          // Handle opening files with default OS app (video players, file managers, etc.)
           ipcMain.handle('open-file', async (event, filePath) => {
             const result = await shell.openPath(filePath);
             return { success: !result, error: result };
@@ -100,9 +113,9 @@ jobs:
           });
           EOF
 
-      - name: Package AppImage
+      - name: Package Desktop App
         run: |
-          npx electron-builder --linux appimage --publish never \
+          npx electron-builder ${{ matrix.builder_flag }} --publish never \
             -c.directories.output=release-out \
             -c.extraMetadata.main=main.cjs \
             -c.extraMetadata.name="xmbplayer" \
@@ -114,5 +127,5 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag_name || github.ref_name }}
-          files: release-out/*.AppImage
+          files: release-out/*.*
           generate_release_notes: true
