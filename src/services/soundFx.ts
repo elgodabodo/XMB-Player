@@ -5,8 +5,24 @@
 
 class SoundFxService {
   private ctx: AudioContext | null = null;
-  private enabled: boolean = true;
-  private volume: number = 0.45;
+  private enabled: boolean = (() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('xmb_sound_fx_enabled');
+      if (stored !== null) return stored === 'true';
+    }
+    return true;
+  })();
+
+  private volume: number = (() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('xmb_sound_fx_volume');
+      if (stored !== null) {
+        const val = parseFloat(stored);
+        if (!isNaN(val)) return Math.max(0, Math.min(1, val));
+      }
+    }
+    return 0.45;
+  })();
 
   private initContext() {
     if (!this.ctx && typeof window !== 'undefined') {
@@ -20,14 +36,34 @@ class SoundFxService {
 
   public setEnabled(enabled: boolean) {
     this.enabled = enabled;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('xmb_sound_fx_enabled', String(enabled));
+    }
   }
 
   public isEnabled(): boolean {
     return this.enabled;
   }
 
+  public getVolume(): number {
+    return this.volume;
+  }
+
   public setVolume(vol: number) {
     this.volume = Math.max(0, Math.min(1, vol));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('xmb_sound_fx_volume', String(this.volume));
+    }
+  }
+
+  public increaseVolume(step = 0.1): number {
+    this.setVolume(this.volume + step);
+    return this.volume;
+  }
+
+  public decreaseVolume(step = 0.1): number {
+    this.setVolume(this.volume - step);
+    return this.volume;
   }
 
   /**
@@ -191,7 +227,7 @@ class SoundFxService {
   }
 
   /**
-   * PlayStation Game Launch Chime
+   * PlayStation Game Launch Chime (Ascending 4-note crystal chime + warm bass swell)
    */
   public playGameBoot() {
     if (!this.enabled) return;
@@ -200,30 +236,73 @@ class SoundFxService {
       if (!this.ctx) return;
 
       const t = this.ctx.currentTime;
-      // Resonant deep bass sweep + glittering high harmonic
+
+      // 1. Ascending 4-Note Crystal Arpeggio Chime
+      const notes = [
+        { freq: 739.99, delay: 0.00, dur: 0.35, vol: 0.35 },  // F#5
+        { freq: 880.00, delay: 0.08, dur: 0.40, vol: 0.40 },  // A5
+        { freq: 1108.73, delay: 0.16, dur: 0.50, vol: 0.45 }, // C#6
+        { freq: 1479.98, delay: 0.25, dur: 1.20, vol: 0.55 }, // F#6 sparkling bell sustain
+      ];
+
+      notes.forEach(({ freq, delay, dur, vol }) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, t + delay);
+
+        gain.gain.setValueAtTime(0.0001, t + delay);
+        gain.gain.linearRampToValueAtTime(this.volume * vol, t + delay + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + delay + dur);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(t + delay);
+        osc.stop(t + delay + dur + 0.05);
+      });
+
+      // 2. Resonant Warm Sub Bass Sweep
       const subOsc = this.ctx.createOscillator();
       const subGain = this.ctx.createGain();
       subOsc.type = 'sine';
-      subOsc.frequency.setValueAtTime(110, t);
-      subOsc.frequency.exponentialRampToValueAtTime(55, t + 1.2);
-      subGain.gain.setValueAtTime(this.volume * 0.6, t);
-      subGain.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+      subOsc.frequency.setValueAtTime(146.83, t + 0.15); // D3
+      subOsc.frequency.exponentialRampToValueAtTime(73.42, t + 1.6); // D2
+      subGain.gain.setValueAtTime(0.0001, t + 0.15);
+      subGain.gain.linearRampToValueAtTime(this.volume * 0.45, t + 0.3);
+      subGain.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
       subOsc.connect(subGain);
       subGain.connect(this.ctx.destination);
-      subOsc.start(t);
-      subOsc.stop(t + 1.5);
+      subOsc.start(t + 0.15);
+      subOsc.stop(t + 1.85);
 
-      const highOsc = this.ctx.createOscillator();
-      const highGain = this.ctx.createGain();
-      highOsc.type = 'triangle';
-      highOsc.frequency.setValueAtTime(1760, t + 0.1);
-      highOsc.frequency.exponentialRampToValueAtTime(2637, t + 0.7);
-      highGain.gain.setValueAtTime(this.volume * 0.4, t + 0.1);
-      highGain.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
-      highOsc.connect(highGain);
-      highGain.connect(this.ctx.destination);
-      highOsc.start(t + 0.1);
-      highOsc.stop(t + 1.3);
+      // 3. Shimmering Detuned Chord Body (D Major 9th)
+      const chordFreqs = [293.66, 369.99, 440.00, 554.37, 659.25]; // D4, F#4, A4, C#5, E5
+      chordFreqs.forEach((freq, i) => {
+        if (!this.ctx) return;
+
+        [-6, 6].forEach((detune) => {
+          if (!this.ctx) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+
+          osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+          osc.frequency.setValueAtTime(freq, t + 0.2 + i * 0.02);
+          osc.detune.setValueAtTime(detune, t + 0.2);
+
+          gain.gain.setValueAtTime(0.0001, t + 0.2 + i * 0.02);
+          gain.gain.linearRampToValueAtTime(this.volume * 0.08, t + 0.45);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(t + 0.2 + i * 0.02);
+          osc.stop(t + 2.25);
+        });
+      });
     } catch {}
   }
 
@@ -231,33 +310,7 @@ class SoundFxService {
    * PS3 System Boot chord
    */
   public playBootChord() {
-    if (!this.enabled) return;
-    try {
-      this.initContext();
-      if (!this.ctx) return;
-
-      const t = this.ctx.currentTime;
-      const frequencies = [220, 329.63, 440, 554.37, 659.25, 880]; // A Major 9th chord
-
-      frequencies.forEach((freq, idx) => {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, t);
-
-        const delay = idx * 0.08;
-        gain.gain.setValueAtTime(0.001, t + delay);
-        gain.gain.linearRampToValueAtTime(this.volume * 0.15, t + delay + 0.4);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + delay + 2.4);
-
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc.start(t + delay);
-        osc.stop(t + delay + 2.5);
-      });
-    } catch {}
+    this.playGameBoot();
   }
 }
 

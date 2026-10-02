@@ -136,6 +136,27 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
       }
     }
 
+    // 1. Build a map of album cover artworks from tracks in this batch that have embedded covers
+    const albumCoverMap = new Map<string, string>();
+    for (const track of newTracks) {
+      if (track.coverUrl && !track.coverUrl.startsWith('data:image/svg')) {
+        const key = `${track.artist.toLowerCase().trim()}:::${track.album.toLowerCase().trim()}`;
+        if (!albumCoverMap.has(key)) {
+          albumCoverMap.set(key, track.coverUrl);
+        }
+      }
+    }
+
+    // 2. Propagate album cover to sibling tracks of the same album
+    for (const track of newTracks) {
+      if (!track.coverUrl || track.coverUrl.startsWith('data:image/svg')) {
+        const key = `${track.artist.toLowerCase().trim()}:::${track.album.toLowerCase().trim()}`;
+        if (albumCoverMap.has(key)) {
+          track.coverUrl = albumCoverMap.get(key)!;
+        }
+      }
+    }
+
     // Save parent directories to config
     for (const dir of parentDirsSet) {
       libraryStorage.addMusicDirectory(dir);
@@ -153,6 +174,33 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
 
     // Notify parent ONCE without triggering auto-play
     onTracksImported(newTracks);
+
+    // 3. Background Artwork Enrichment for tracks that still only have placeholder SVG
+    (async () => {
+      let updatedAny = false;
+      for (const track of newTracks) {
+        if (!track.coverUrl || track.coverUrl.startsWith('data:image/svg')) {
+          try {
+            const query = encodeURIComponent(`${track.artist} ${track.title}`.replace(/Unknown Artist|Local Artist/i, '').trim());
+            if (query.length > 2) {
+              const res = await fetch(`https://itunes.apple.com/search?term=${query}&media=music&entity=song&limit=1`);
+              if (res.ok) {
+                const data = await res.json();
+                if (data.results && data.results[0]?.artworkUrl100) {
+                  const highResArt = data.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
+                  track.coverUrl = highResArt;
+                  libraryStorage.updateTrackMetadata(track.id, { coverUrl: highResArt });
+                  updatedAny = true;
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+      if (updatedAny) {
+        onTracksImported(libraryStorage.getTracks());
+      }
+    })();
   };
 
   // Pull music from pasted directory path or scan directory

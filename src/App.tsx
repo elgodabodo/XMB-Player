@@ -60,6 +60,8 @@ import { PictureViewerModal } from './components/PictureViewerModal';
 import { PictureContextMenu } from './components/PictureContextMenu';
 import { CustomColorPickerModal } from './components/CustomColorPickerModal';
 import { NowPlayingMiniJacket } from './components/NowPlayingMiniJacket';
+import { PS3ConfirmModal } from './components/PS3ConfirmModal';
+import { TetrisGameModal } from './components/TetrisGameModal';
 
 export default function App() {
   // Navigation & Hierarchy State
@@ -181,6 +183,10 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isAddGameModalOpen, setIsAddGameModalOpen] = useState(false);
   const [activeLaunchGame, setActiveLaunchGame] = useState<CustomGameApp | null>(null);
+  const [isTetrisOpen, setIsTetrisOpen] = useState(false);
+
+  const isTetrisOpenRef = useRef(isTetrisOpen);
+  isTetrisOpenRef.current = isTetrisOpen;
 
   const volumeRef = useRef(volume);
   volumeRef.current = volume;
@@ -197,6 +203,29 @@ export default function App() {
   // Gamepad single-press state refs
   const prevButtonsRef = useRef<{ [buttonIndex: number]: boolean }>({});
   const prevAxesRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Confirmation Modal State & Handlers
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    countBadge?: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    itemType?: 'music' | 'video' | 'photo' | 'artwork' | 'default';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const playingVideoRef = useRef<VideoItem | null>(playingVideo);
+  playingVideoRef.current = playingVideo;
+
+  const confirmModalRef = useRef<boolean>(confirmModal.isOpen);
+  confirmModalRef.current = confirmModal.isOpen;
 
   // Setting Change Audio & Visual Feedback Helper
   const showSettingFeedback = useCallback(
@@ -538,6 +567,97 @@ export default function App() {
     showSettingFeedback('Videos Cleared', 'All videos removed from collection', 'check');
   }, [refreshLibrary, showSettingFeedback]);
 
+  const handleClearAllCustomPictures = useCallback(() => {
+    soundFx.playCancel();
+    pictureService.clearAllCustomPictures();
+    refreshLibrary();
+    showSettingFeedback('Pictures Cleared', 'All custom pictures removed from collection', 'check');
+  }, [refreshLibrary, showSettingFeedback]);
+
+  const requestClearAllTracks = useCallback(() => {
+    if (tracks.length === 0) {
+      soundFx.playTick();
+      showSettingFeedback('Music Library', 'Music library is already empty', 'music');
+      return;
+    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete All Songs?',
+      message: `Are you sure you want to delete all ${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'} from your Music Library? All custom playlist tracks will also be cleared.`,
+      countBadge: `${tracks.length} SONGS`,
+      itemType: 'music',
+      confirmLabel: 'Delete All',
+      cancelLabel: 'Cancel',
+      onConfirm: () => {
+        handleClearAllTracks();
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
+  }, [tracks.length, showSettingFeedback, handleClearAllTracks]);
+
+  const requestClearAllVideos = useCallback(() => {
+    if (videos.length === 0) {
+      soundFx.playTick();
+      showSettingFeedback('Video Library', 'Video library is already empty', 'check');
+      return;
+    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete All Videos?',
+      message: `Are you sure you want to delete all ${videos.length} ${videos.length === 1 ? 'video' : 'videos'} from your collection? Saved playback positions will also be removed.`,
+      countBadge: `${videos.length} VIDEOS`,
+      itemType: 'video',
+      confirmLabel: 'Delete All',
+      cancelLabel: 'Cancel',
+      onConfirm: () => {
+        handleClearAllVideos();
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
+  }, [videos.length, showSettingFeedback, handleClearAllVideos]);
+
+  const requestRemoveAllAlbumArtwork = useCallback(() => {
+    if (galleryPictures.length === 0) {
+      soundFx.playTick();
+      showSettingFeedback('Album Art', 'No album artwork in library', 'palette');
+      return;
+    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Remove All Album Artwork?',
+      message: `Are you sure you want to remove album artwork from all ${galleryPictures.length} ${galleryPictures.length === 1 ? 'album' : 'albums'} in your music library?`,
+      countBadge: `${galleryPictures.length} ALBUMS`,
+      itemType: 'artwork',
+      confirmLabel: 'Remove All',
+      cancelLabel: 'Cancel',
+      onConfirm: () => {
+        handleRemoveAllAlbumArtwork();
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
+  }, [galleryPictures.length, showSettingFeedback, handleRemoveAllAlbumArtwork]);
+
+  const requestClearAllCustomPictures = useCallback(() => {
+    if (customPictures.length === 0) {
+      soundFx.playTick();
+      showSettingFeedback('Photo Library', 'Photo collection is already empty', 'check');
+      return;
+    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete All Custom Photos?',
+      message: `Are you sure you want to delete all ${customPictures.length} ${customPictures.length === 1 ? 'photo' : 'photos'} from your Photo collection?`,
+      countBadge: `${customPictures.length} PHOTOS`,
+      itemType: 'photo',
+      confirmLabel: 'Delete All',
+      cancelLabel: 'Cancel',
+      onConfirm: () => {
+        handleClearAllCustomPictures();
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
+  }, [customPictures.length, showSettingFeedback, handleClearAllCustomPictures]);
+
   // Dynamic Vertical Items Generator: Updates LIVE on any state change!
   const activeVerticalItems = useMemo<XMBItemDef[]>(() => {
     // If inside a subfolder: dynamically generate its items based on live state!
@@ -715,6 +835,128 @@ export default function App() {
             showSettingFeedback('Audio Sink Connected', `Routing audio through ${sk.name}`, 'speaker');
           },
         }));
+      }
+
+      if (currentSubFolder === 'sound_settings') {
+        const currentVol = Math.round(soundFx.getVolume() * 100);
+        const isEnabled = soundFx.isEnabled();
+
+        return [
+          {
+            id: 'snd-toggle',
+            title: isEnabled ? 'UI Sound Effects: Enabled' : 'UI Sound Effects: Muted',
+            subtitle: isEnabled ? 'PlayStation XMB navigation chimes active' : 'All UI sound effects muted',
+            badge: isEnabled ? 'ON' : 'MUTED',
+            bulletType: 'speaker' as const,
+            action: () => {
+              const nextState = !isEnabled;
+              soundFx.setEnabled(nextState);
+              if (nextState) soundFx.playSelect();
+              showSettingFeedback(
+                'Sound Settings',
+                nextState ? 'UI Sound Effects: Enabled' : 'UI Sound Effects: Muted',
+                'speaker'
+              );
+              refreshLibrary();
+            },
+          },
+          {
+            id: 'snd-vol-inc',
+            title: `Volume Up (+10%) · Current: ${currentVol}%`,
+            subtitle: 'Increase UI & System navigation sounds volume',
+            badge: `${currentVol}%`,
+            bulletType: 'speaker' as const,
+            action: () => {
+              const newVol = soundFx.increaseVolume(0.1);
+              soundFx.playSelect();
+              showSettingFeedback('UI Volume Increased', `System sounds volume set to ${Math.round(newVol * 100)}%`, 'speaker');
+              refreshLibrary();
+            },
+          },
+          {
+            id: 'snd-vol-dec',
+            title: `Volume Down (-10%) · Current: ${currentVol}%`,
+            subtitle: 'Decrease UI & System navigation sounds volume',
+            badge: `${currentVol}%`,
+            bulletType: 'speaker' as const,
+            action: () => {
+              const newVol = soundFx.decreaseVolume(0.1);
+              soundFx.playSelect();
+              showSettingFeedback('UI Volume Decreased', `System sounds volume set to ${Math.round(newVol * 100)}%`, 'speaker');
+              refreshLibrary();
+            },
+          },
+          {
+            id: 'snd-vol-100',
+            title: 'UI Sound Volume: 100% (Maximum)',
+            subtitle: 'Full volume system audio chimes',
+            badge: currentVol === 100 ? 'ACTIVE' : undefined,
+            bulletType: 'speaker' as const,
+            action: () => {
+              soundFx.setVolume(1.0);
+              soundFx.playSelect();
+              showSettingFeedback('UI Sound Volume', 'System sounds set to 100%', 'speaker');
+              refreshLibrary();
+            },
+          },
+          {
+            id: 'snd-vol-75',
+            title: 'UI Sound Volume: 75% (High)',
+            subtitle: 'Loud crisp system navigation sounds',
+            badge: currentVol === 75 ? 'ACTIVE' : undefined,
+            bulletType: 'speaker' as const,
+            action: () => {
+              soundFx.setVolume(0.75);
+              soundFx.playSelect();
+              showSettingFeedback('UI Sound Volume', 'System sounds set to 75%', 'speaker');
+              refreshLibrary();
+            },
+          },
+          {
+            id: 'snd-vol-50',
+            title: 'UI Sound Volume: 50% (Medium)',
+            subtitle: 'Balanced default PS3 acoustic level',
+            badge: currentVol === 50 ? 'ACTIVE' : undefined,
+            bulletType: 'speaker' as const,
+            action: () => {
+              soundFx.setVolume(0.5);
+              soundFx.playSelect();
+              showSettingFeedback('UI Sound Volume', 'System sounds set to 50%', 'speaker');
+              refreshLibrary();
+            },
+          },
+          {
+            id: 'snd-vol-25',
+            title: 'UI Sound Volume: 25% (Soft)',
+            subtitle: 'Gentle low-volume background clicks',
+            badge: currentVol === 25 ? 'ACTIVE' : undefined,
+            bulletType: 'speaker' as const,
+            action: () => {
+              soundFx.setVolume(0.25);
+              soundFx.playSelect();
+              showSettingFeedback('UI Sound Volume', 'System sounds set to 25%', 'speaker');
+              refreshLibrary();
+            },
+          },
+          {
+            id: 'snd-test-chime',
+            title: 'Test UI Confirmation Sound',
+            subtitle: 'Play PS3 double chime audio test',
+            bulletType: 'music' as const,
+            action: () => {
+              soundFx.playSelect();
+            },
+          },
+          {
+            id: 'snd-test-boot',
+            title: 'Test System Boot Chime',
+            subtitle: 'Play resonant PS3 system boot chord',
+            bulletType: 'music' as const,
+            action: () => {
+              soundFx.playGameBoot();
+            },
+          },
+        ];
       }
 
       if (currentSubFolder === 'accessory_settings') {
@@ -931,19 +1173,13 @@ export default function App() {
           {
             id: 'set-sound',
             title: 'Sound Settings',
-            subtitle: soundFx.isEnabled() ? 'UI Sound Effects: On' : 'UI Sound Effects: Muted',
-            badge: soundFx.isEnabled() ? 'ON' : 'MUTED',
+            subtitle: soundFx.isEnabled()
+              ? `UI Sound Effects: ${Math.round(soundFx.getVolume() * 100)}% Volume`
+              : 'UI Sound Effects: Muted',
+            badge: soundFx.isEnabled() ? `${Math.round(soundFx.getVolume() * 100)}%` : 'MUTED',
             bulletType: 'speaker',
-            action: () => {
-              const nextState = !soundFx.isEnabled();
-              soundFx.setEnabled(nextState);
-              showSettingFeedback(
-                'Sound Settings',
-                nextState ? 'PlayStation UI Sound Effects: Enabled' : 'PlayStation UI Sound Effects: Muted',
-                'speaker'
-              );
-              refreshLibrary();
-            },
+            isFolder: true,
+            folderType: 'sound_settings',
           },
           {
             id: 'set-accessory',
@@ -979,15 +1215,20 @@ export default function App() {
                 : 'No album artwork in library',
             badge: galleryPictures.length > 0 ? `${galleryPictures.length} ALBUMS` : 'EMPTY',
             bulletType: 'wrench',
-            action: () => {
-              if (galleryPictures.length === 0) {
-                soundFx.playTick();
-                showSettingFeedback('Album Art', 'No album artwork in library', 'palette');
-                return;
-              }
-              handleRemoveAllAlbumArtwork();
-            },
+            action: requestRemoveAllAlbumArtwork,
           },
+          ...(customPictures.length > 0
+            ? [
+                {
+                  id: 'pht-remove-all-custom',
+                  title: 'Remove All Custom Photos',
+                  subtitle: `Delete all ${customPictures.length} custom imported pictures`,
+                  badge: `${customPictures.length} PHOTOS`,
+                  bulletType: 'wrench' as const,
+                  action: requestClearAllCustomPictures,
+                },
+              ]
+            : []),
           {
             id: 'pht-import-pics',
             title: 'Import Custom Pictures',
@@ -1035,14 +1276,7 @@ export default function App() {
             subtitle: tracks.length > 0 ? `Delete all ${tracks.length} songs from library` : 'Music library is currently empty',
             badge: tracks.length > 0 ? `${tracks.length} SONGS` : 'EMPTY',
             bulletType: 'wrench',
-            action: () => {
-              if (tracks.length === 0) {
-                soundFx.playTick();
-                showSettingFeedback('Music Library', 'Library is already empty', 'music');
-                return;
-              }
-              handleClearAllTracks();
-            },
+            action: requestClearAllTracks,
           },
           {
             id: 'mus-all',
@@ -1101,14 +1335,7 @@ export default function App() {
             subtitle: videos.length > 0 ? `Delete all ${videos.length} videos from collection` : 'Video library is currently empty',
             badge: videos.length > 0 ? `${videos.length} VIDEOS` : 'EMPTY',
             bulletType: 'wrench',
-            action: () => {
-              if (videos.length === 0) {
-                soundFx.playTick();
-                showSettingFeedback('Video Library', 'Video library is already empty', 'check');
-                return;
-              }
-              handleClearAllVideos();
-            },
+            action: requestClearAllVideos,
           },
           {
             id: 'vid-visualizer',
@@ -1144,6 +1371,18 @@ export default function App() {
 
       case 'game':
         return [
+          {
+            id: 'gm-tetris',
+            title: 'Tetris Arcade Edition',
+            subtitle: 'Classic 10x20 Block Stacker · Authentic Speed Ramp · Controller Ready',
+            badge: 'PLAYABLE',
+            bulletType: 'disc' as const,
+            action: () => {
+              soundFx.playSelect();
+              gstEngine.pause();
+              setIsTetrisOpen(true);
+            },
+          },
           {
             id: 'gm-add-app',
             title: '+ Add Custom Game / App Path',
@@ -1251,10 +1490,14 @@ export default function App() {
     games,
     videos,
     galleryPictures,
+    customPictures,
     currentTrack,
     controllerConnected,
     handlePlayTrack,
-    handleClearAllTracks,
+    requestClearAllTracks,
+    requestClearAllVideos,
+    requestRemoveAllAlbumArtwork,
+    requestClearAllCustomPictures,
     showSettingFeedback,
     refreshLibrary,
   ]);
@@ -1297,7 +1540,13 @@ export default function App() {
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (playingVideo) return;
+      if (
+        playingVideoRef.current ||
+        confirmModalRef.current ||
+        isTetrisOpenRef.current
+      ) {
+        return;
+      }
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
       switch (e.key) {
@@ -1542,7 +1791,11 @@ export default function App() {
     let animId: number;
 
     const pollGamepad = () => {
-      if (playingVideo) {
+      if (
+        playingVideoRef.current ||
+        confirmModalRef.current ||
+        isTetrisOpenRef.current
+      ) {
         animId = requestAnimationFrame(pollGamepad);
         return;
       }
@@ -1945,6 +2198,8 @@ export default function App() {
           currentTime={currentTime}
           duration={duration}
           onTogglePlay={handleTogglePlay}
+          onPrev={handlePrevTrack}
+          onNext={handleNextTrack}
           onOpenVisualizer={() => setIsFullVisualizerView(true)}
           onSeek={handleSeek}
           theme={theme}
@@ -1954,6 +2209,10 @@ export default function App() {
           repeatMode={repeatMode}
           onToggleShuffle={handleToggleShuffle}
           onToggleRepeat={handleToggleRepeat}
+          volume={volume}
+          onVolumeChange={handleVolumeChange}
+          isMuted={isMuted}
+          onToggleMute={handleToggleMute}
         />
       )}
 
@@ -2072,6 +2331,8 @@ export default function App() {
       <VideoPlayerModal
         video={playingVideo}
         onClose={() => setPlayingVideo(null)}
+        controllerType={controllerType}
+        controllerConnected={controllerConnected}
       />
 
       {/* Video Context Menu (△) */}
@@ -2104,6 +2365,29 @@ export default function App() {
         onVolumeChange={handleVolumeChange}
         isMuted={isMuted}
         onToggleMute={handleToggleMute}
+        controllerType={controllerType}
+        controllerConnected={controllerConnected}
+      />
+
+      {/* PS3 System Confirmation Dialog Modal */}
+      <PS3ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        countBadge={confirmModal.countBadge}
+        confirmLabel={confirmModal.confirmLabel}
+        cancelLabel={confirmModal.cancelLabel}
+        itemType={confirmModal.itemType}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+        controllerType={controllerType}
+        controllerConnected={controllerConnected}
+      />
+
+      {/* Playable Tetris Arcade Game Modal */}
+      <TetrisGameModal
+        isOpen={isTetrisOpen}
+        onClose={() => setIsTetrisOpen(false)}
         controllerType={controllerType}
         controllerConnected={controllerConnected}
       />
