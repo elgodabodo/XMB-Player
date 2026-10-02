@@ -1096,6 +1096,21 @@ export default function App() {
       case 'video':
         return [
           {
+            id: 'vid-remove-all',
+            title: 'Remove All Videos',
+            subtitle: videos.length > 0 ? `Delete all ${videos.length} videos from collection` : 'Video library is currently empty',
+            badge: videos.length > 0 ? `${videos.length} VIDEOS` : 'EMPTY',
+            bulletType: 'wrench',
+            action: () => {
+              if (videos.length === 0) {
+                soundFx.playTick();
+                showSettingFeedback('Video Library', 'Video library is already empty', 'check');
+                return;
+              }
+              handleClearAllVideos();
+            },
+          },
+          {
             id: 'vid-visualizer',
             title: 'Now Playing Visualizer & Lyrics',
             subtitle: `Active: ${visualizerMode.replace('_', ' ').toUpperCase()} · Click to open fullscreen`,
@@ -1112,18 +1127,6 @@ export default function App() {
               setIsImportVideoModalOpen(true);
             },
           },
-          ...(videos.length > 0
-            ? [
-                {
-                  id: 'vid-clear-all',
-                  title: 'Remove All Videos',
-                  subtitle: `Clear all ${videos.length} videos from collection`,
-                  badge: `${videos.length} VIDEOS`,
-                  bulletType: 'wrench' as const,
-                  action: handleClearAllVideos,
-                },
-              ]
-            : []),
           ...videos.map((v) => ({
             id: v.id,
             title: v.title,

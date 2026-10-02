@@ -168,6 +168,18 @@ export const AddGameModal: React.FC<AddGameModalProps> = ({
     setDescription(p.description);
   };
 
+  const getExecPlaceholder = (os: 'win' | 'mac' | 'linux') => {
+    if (os === 'win') return 'e.g. C:\\Program Files\\RPCS3\\rpcs3.exe, steam, C:\\RetroArch\\retroarch.exe';
+    if (os === 'mac') return 'e.g. /Applications/RPCS3.app/Contents/MacOS/rpcs3, steam';
+    return 'e.g. /usr/bin/rpcs3, steam -gamepadui, /usr/bin/retroarch';
+  };
+
+  const getArgsPlaceholder = (os: 'win' | 'mac' | 'linux') => {
+    if (os === 'win') return 'e.g. --fullscreen, C:\\ROMs\\game.iso';
+    if (os === 'mac') return 'e.g. --fullscreen, /Users/user/ROMs/game.iso';
+    return 'e.g. --fullscreen, -L core.so, /home/user/ROMs/game.iso';
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !execPath.trim()) return;
@@ -282,7 +294,7 @@ export const AddGameModal: React.FC<AddGameModalProps> = ({
                 required
                 value={execPath}
                 onChange={(e) => setExecPath(e.target.value)}
-                placeholder="e.g. /usr/bin/rpcs3, steam -gamepadui, /usr/bin/retroarch"
+                placeholder={getExecPlaceholder(selectedOs)}
                 className="w-full pl-9 pr-3.5 py-2 bg-black/60 border border-white/15 rounded-lg text-xs font-mono text-emerald-400 placeholder-white/40 focus:outline-none focus:border-sky-400"
               />
             </div>
@@ -297,7 +309,7 @@ export const AddGameModal: React.FC<AddGameModalProps> = ({
               type="text"
               value={args}
               onChange={(e) => setArgs(e.target.value)}
-              placeholder="e.g. --fullscreen, -L core.so, /home/user/ROMs/game.iso"
+              placeholder={getArgsPlaceholder(selectedOs)}
               className="w-full px-3.5 py-2 bg-black/60 border border-white/15 rounded-lg text-xs font-mono text-white/90 placeholder-white/40 focus:outline-none focus:border-sky-400"
             />
           </div>
