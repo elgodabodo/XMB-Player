@@ -85,12 +85,12 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
 
   const handleLoadedMetadata = () => {
     if (!videoRef.current || !video) return;
-    const dur = videoRef.current.duration || video.duration || 0;
+    const dur = isFinite(videoRef.current.duration) ? videoRef.current.duration : (video.duration || 100);
     setDuration(dur);
 
     const savedKey = `xmb_video_pos_${video.id}`;
     const savedTime = parseFloat(localStorage.getItem(savedKey) || '0');
-    if (savedTime > 3 && savedTime < dur - 10) {
+    if (savedTime > 2) {
       videoRef.current.currentTime = savedTime;
       setCurrentTime(savedTime);
       setResumeNotice(`Resumed playback from ${formatTime(savedTime)}`);
@@ -102,12 +102,26 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
     if (!videoRef.current || !video) return;
     const curr = videoRef.current.currentTime;
     setCurrentTime(curr);
-    setDuration(videoRef.current.duration || video.duration || 0);
+    setDuration(isFinite(videoRef.current.duration) ? videoRef.current.duration : (video.duration || 100));
 
     try {
       localStorage.setItem(`xmb_video_pos_${video.id}`, String(curr));
     } catch {}
   };
+
+  const handleClose = useCallback(() => {
+    if (videoRef.current && video) {
+      try {
+        localStorage.setItem(`xmb_video_pos_${video.id}`, String(videoRef.current.currentTime));
+      } catch {}
+    }
+    soundFx.playCancel();
+    onClose();
+    setTimeout(() => {
+      window.focus();
+      if (document.body) document.body.focus();
+    }, 50);
+  }, [video, onClose]);
 
   // Gamepad Controller Polling Loop
   const prevGpButtonsRef = useRef<{ [idx: number]: boolean }>({});
@@ -145,13 +159,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
         }
         // Circle (1) or Triangle (3) -> Close
         else if (justPressed(1) || justPressed(3)) {
-          soundFx.playCancel();
-          if (videoRef.current && video) {
-            try {
-              localStorage.setItem(`xmb_video_pos_${video.id}`, String(videoRef.current.currentTime));
-            } catch {}
-          }
-          onClose();
+          handleClose();
         }
         // D-Pad Left (14) or Stick Left -> Rewind 10s
         else if (justPressed(14) || stickLeftJust) {
@@ -275,8 +283,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
         case 'Escape':
         case 'Backspace':
           e.preventDefault();
-          soundFx.playCancel();
-          onClose();
+          handleClose();
           break;
       }
     };
@@ -346,10 +353,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
 
           <button
             type="button"
-            onClick={() => {
-              soundFx.playCancel();
-              onClose();
-            }}
+            onClick={handleClose}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors border border-white/20 shadow-lg cursor-pointer text-xs font-mono"
             title="Press ○ or ESC to close"
           >
