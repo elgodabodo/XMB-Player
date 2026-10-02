@@ -1,4 +1,4 @@
-name: Build and Release
+name: Build and Release Linux AppImage
 
 on:
   push:
@@ -12,8 +12,8 @@ on:
         default: 'v1.0.0'
 
 jobs:
-  build-and-release:
-    name: Build and Publish Vite App
+  build-appimage:
+    name: Build Linux AppImage
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -27,18 +27,51 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dependencies
+      - name: Install project dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Build the project
+      - name: Build Vite web app
         run: npm run build
 
-      - name: Archive build artifacts
-        run: cd dist && zip -r ../release-build.zip .
+      - name: Generate Electron wrapper
+        run: |
+          npm install -D electron electron-builder --legacy-peer-deps
+          cat << 'EOF' > main.js
+          const { app, BrowserWindow } = require('electron');
+          const path = require('path');
+
+          function createWindow() {
+            const win = new BrowserWindow({
+              width: 1280,
+              height: 720,
+              autoHideMenuBar: true,
+              webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true
+              }
+            });
+            win.loadFile(path.join(__dirname, 'dist/index.html'));
+          }
+
+          app.whenReady().then(createWindow);
+
+          app.on('window-all-closed', () => {
+            if (process.platform !== 'darwin') app.quit();
+          });
+          EOF
+
+      - name: Package AppImage
+        run: |
+          npx electron-builder --linux appimage \
+            -c.directories.output=release-out \
+            -c.extraMetadata.main=main.js \
+            -c.extraMetadata.name="xmbplayer" \
+            -c.files="dist/**/*" \
+            -c.files="main.js"
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag_name || github.ref_name }}
-          files: release-build.zip
+          files: release-out/*.AppImage
           generate_release_notes: true
