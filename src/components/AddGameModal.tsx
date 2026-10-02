@@ -10,48 +10,136 @@ interface AddGameModalProps {
   onGameAdded: (game: CustomGameApp) => void;
 }
 
-const PRESETS = [
-  {
-    title: 'RPCS3 (PS3 Emulator)',
-    execPath: '/usr/bin/rpcs3',
-    args: '--no-gui',
-    category: 'emulator' as const,
-    coverUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400&q=80',
-    description: 'Sony PlayStation 3 Emulator',
-  },
-  {
-    title: 'RetroArch Universal',
-    execPath: '/usr/bin/retroarch',
-    args: '-v',
-    category: 'retro' as const,
-    coverUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&q=80',
-    description: 'Multi-system retro emulation frontend',
-  },
-  {
-    title: 'Steam Big Picture',
-    execPath: 'steam',
-    args: '-gamepadui',
-    category: 'steam' as const,
-    coverUrl: 'https://images.unsplash.com/photo-1612287233207-6b4df30b42c4?w=400&q=80',
-    description: 'Valve Steam full-screen launcher',
-  },
-  {
-    title: 'Lutris Open Gaming',
-    execPath: '/usr/bin/lutris',
-    args: '',
-    category: 'native' as const,
-    coverUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400&q=80',
-    description: 'Open gaming platform for Linux',
-  },
-  {
-    title: 'Dolphin GameCube/Wii',
-    execPath: '/usr/bin/dolphin-emu',
-    args: '-b',
-    category: 'emulator' as const,
-    coverUrl: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=400&q=80',
-    description: 'Nintendo GameCube and Wii emulator',
-  },
-];
+const getOsPresets = () => {
+  const isWin = typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent);
+  const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent);
+
+  if (isWin) {
+    return [
+      {
+        title: 'RPCS3 (PS3 Emulator)',
+        execPath: 'C:\\Program Files\\RPCS3\\rpcs3.exe',
+        args: '--no-gui',
+        category: 'emulator' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400&q=80',
+        description: 'Sony PlayStation 3 Emulator (Windows)',
+      },
+      {
+        title: 'RetroArch Universal',
+        execPath: 'C:\\RetroArch\\retroarch.exe',
+        args: '-v',
+        category: 'retro' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&q=80',
+        description: 'Multi-system retro emulation frontend (Windows)',
+      },
+      {
+        title: 'Steam Big Picture',
+        execPath: 'steam',
+        args: '-gamepadui',
+        category: 'steam' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1612287233207-6b4df30b42c4?w=400&q=80',
+        description: 'Valve Steam full-screen launcher',
+      },
+      {
+        title: 'Epic Games Launcher',
+        execPath: 'C:\\Program Files (x86)\\Epic Games\\Launcher\\Portal\\Binaries\\Win32\\EpicGamesLauncher.exe',
+        args: '',
+        category: 'native' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400&q=80',
+        description: 'Epic Games store launcher',
+      },
+      {
+        title: 'Dolphin GameCube/Wii',
+        execPath: 'C:\\Program Files\\Dolphin\\Dolphin.exe',
+        args: '-b',
+        category: 'emulator' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=400&q=80',
+        description: 'Nintendo GameCube and Wii emulator (Windows)',
+      },
+    ];
+  } else if (isMac) {
+    return [
+      {
+        title: 'RPCS3 (PS3 Emulator)',
+        execPath: '/Applications/RPCS3.app/Contents/MacOS/rpcs3',
+        args: '--no-gui',
+        category: 'emulator' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400&q=80',
+        description: 'Sony PlayStation 3 Emulator (macOS)',
+      },
+      {
+        title: 'RetroArch Universal',
+        execPath: '/Applications/RetroArch.app/Contents/MacOS/RetroArch',
+        args: '-v',
+        category: 'retro' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&q=80',
+        description: 'Multi-system retro emulation frontend (macOS)',
+      },
+      {
+        title: 'Steam Big Picture',
+        execPath: '/Applications/Steam.app/Contents/MacOS/steam',
+        args: '-gamepadui',
+        category: 'steam' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1612287233207-6b4df30b42c4?w=400&q=80',
+        description: 'Valve Steam full-screen launcher (macOS)',
+      },
+      {
+        title: 'Dolphin GameCube/Wii',
+        execPath: '/Applications/Dolphin.app/Contents/MacOS/Dolphin',
+        args: '-b',
+        category: 'emulator' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=400&q=80',
+        description: 'Nintendo GameCube and Wii emulator (macOS)',
+      },
+    ];
+  } else {
+    // Linux (Default for AppImage)
+    return [
+      {
+        title: 'RPCS3 (PS3 Emulator)',
+        execPath: '/usr/bin/rpcs3',
+        args: '--no-gui',
+        category: 'emulator' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400&q=80',
+        description: 'Sony PlayStation 3 Emulator (Linux AppImage / Flatpak)',
+      },
+      {
+        title: 'RetroArch Universal',
+        execPath: '/usr/bin/retroarch',
+        args: '-v',
+        category: 'retro' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&q=80',
+        description: 'Multi-system retro emulation frontend (Linux)',
+      },
+      {
+        title: 'Steam Big Picture',
+        execPath: 'steam',
+        args: '-gamepadui',
+        category: 'steam' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1612287233207-6b4df30b42c4?w=400&q=80',
+        description: 'Valve Steam full-screen launcher',
+      },
+      {
+        title: 'Lutris Open Gaming',
+        execPath: '/usr/bin/lutris',
+        args: '',
+        category: 'native' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400&q=80',
+        description: 'Open gaming platform for Linux',
+      },
+      {
+        title: 'Dolphin GameCube/Wii',
+        execPath: '/usr/bin/dolphin-emu',
+        args: '-b',
+        category: 'emulator' as const,
+        coverUrl: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=400&q=80',
+        description: 'Nintendo GameCube and Wii emulator (Linux)',
+      },
+    ];
+  }
+};
+
+const PRESETS = getOsPresets();
 
 export const AddGameModal: React.FC<AddGameModalProps> = ({
   isOpen,

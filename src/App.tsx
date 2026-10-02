@@ -1933,7 +1933,7 @@ export default function App() {
       <PictureViewerModal
         isOpen={viewingPictureIndex !== null}
         onClose={() => setViewingPictureIndex(null)}
-        pictures={galleryPictures}
+        pictures={activePhotoList.length > 0 ? activePhotoList : galleryPictures}
         currentIndex={viewingPictureIndex || 0}
         onIndexChange={setViewingPictureIndex}
         onSetAsAvatar={handleSetAsAvatar}
@@ -1946,7 +1946,8 @@ export default function App() {
         picture={contextPicture}
         onClose={() => setContextPicture(null)}
         onViewFullscreen={(pic) => {
-          const idx = galleryPictures.findIndex((p) => p.id === pic.id);
+          const list = activePhotoList.length > 0 ? activePhotoList : galleryPictures;
+          const idx = list.findIndex((p) => p.id === pic.id);
           setViewingPictureIndex(idx !== -1 ? idx : 0);
         }}
         onSetAsAvatar={handleSetAsAvatar}
@@ -2007,6 +2008,20 @@ export default function App() {
             'Music Imported',
             `Added ${importedTracks.length} ${importedTracks.length === 1 ? 'track' : 'tracks'} to library`,
             'music'
+          );
+        }}
+      />
+
+      {/* Local Picture Import Modal */}
+      <LocalPictureImportModal
+        isOpen={isImportPictureModalOpen}
+        onClose={() => setIsImportPictureModalOpen(false)}
+        onPicturesImported={(importedPics) => {
+          refreshLibrary();
+          showSettingFeedback(
+            'Pictures Imported',
+            `Added ${importedPics.length} ${importedPics.length === 1 ? 'picture' : 'pictures'} to Photo collection`,
+            'check'
           );
         }}
       />

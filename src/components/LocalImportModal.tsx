@@ -28,6 +28,14 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
 
   if (!isOpen) return null;
 
+  const getOsMusicPlaceholder = () => {
+    const isWin = typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent);
+    const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent);
+    if (isWin) return `C:\\Users\\Username\\Music`;
+    if (isMac) return `/Users/username/Music`;
+    return `/home/username/Music`;
+  };
+
   const handleFiles = async (files: FileList | null, folderPrefix?: string) => {
     if (!files || files.length === 0) return;
     setIsProcessing(true);
@@ -52,76 +60,79 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
     const parentDirsSet = new Set<string>();
 
     for (let i = 0; i < total; i++) {
-      const file = validFiles[i];
-
-      // Update visual progress every 4 items or at final
-      if (i % 4 === 0 || i === total - 1) {
-        setProgress({ current: i + 1, total });
-        // Yield to browser event loop so UI does not freeze during large 900+ imports
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
-
-      // Check if Electron native path is available on the File object
-      const nativePath = (file as any).path as string | undefined;
-
-      // Generate local object URL or file URL
-      const audioUrl = nativePath ? formatFileUrl(nativePath) : URL.createObjectURL(file);
-
-      // Deep parse ID3v2, ID3v1, FLAC Vorbis metadata & embedded cover images
-      let meta;
       try {
-        meta = await audioMetadataService.parseFile(file);
-      } catch {
-        meta = {
-          title: file.name.replace(/\.[^/.]+$/, ''),
-          artist: folderPrefix ? folderPrefix.split('/')[0] : 'Local Artist',
-          album: folderPrefix || 'Local Import Collection',
-          duration: 180,
-          format: 'MP3' as const,
-          bitrate: 320,
-          sampleRate: 44100,
-          bitDepth: 16,
-          coverUrl: '',
-        };
-      }
+        const file = validFiles[i];
 
-      const track: Track = {
-        id: `local-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
-        title: meta.title,
-        artist: meta.artist !== 'Unknown Artist' ? meta.artist : (folderPrefix ? folderPrefix.split('/')[0] : 'Local Artist'),
-        album: meta.album !== 'Local Library' ? meta.album : (folderPrefix || 'Local Import Collection'),
-        duration: meta.duration,
-        source: 'local',
-        coverUrl: meta.coverUrl,
-        audioUrl,
-        filePath: nativePath,
-        genre: meta.genre || 'Local Audio',
-        year: meta.year || new Date().getFullYear(),
-        format: meta.format,
-        bitrate: meta.bitrate,
-        sampleRate: meta.sampleRate,
-        bitDepth: meta.bitDepth,
-        isFavorite: false,
-        playCount: 0,
-        dateAdded: new Date().toISOString().split('T')[0],
-      };
+        // Update visual progress every 8 items or at final & yield to event loop
+        if (i % 8 === 0 || i === total - 1) {
+          setProgress({ current: i + 1, total });
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
 
-      // In browser mode (no nativePath), save audio blob to IndexedDB
-      if (!nativePath) {
-        saveAudioBlob(track.id, file).catch(() => {});
-      } else {
+        // Check if Electron native path is available on the File object
+        const nativePath = (file as any).path as string | undefined;
+
+        // Generate local object URL or file URL
+        const audioUrl = nativePath ? formatFileUrl(nativePath) : URL.createObjectURL(file);
+
+        // Deep parse ID3v2, ID3v1, FLAC Vorbis metadata & embedded cover images
+        let meta;
         try {
-          const separator = nativePath.includes('\\') ? '\\' : '/';
-          const parts = nativePath.split(separator);
-          parts.pop();
-          const parentDir = parts.join(separator);
-          if (parentDir) {
-            parentDirsSet.add(parentDir);
-          }
-        } catch {}
-      }
+          meta = await audioMetadataService.parseFile(file);
+        } catch {
+          meta = {
+            title: file.name.replace(/\.[^/.]+$/, ''),
+            artist: folderPrefix ? folderPrefix.split('/')[0] : 'Local Artist',
+            album: folderPrefix || 'Local Import Collection',
+            duration: 180,
+            format: 'MP3' as const,
+            bitrate: 320,
+            sampleRate: 44100,
+            bitDepth: 16,
+            coverUrl: '',
+          };
+        }
 
-      newTracks.push(track);
+        const track: Track = {
+          id: `local-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+          title: meta.title,
+          artist: meta.artist !== 'Unknown Artist' ? meta.artist : (folderPrefix ? folderPrefix.split('/')[0] : 'Local Artist'),
+          album: meta.album !== 'Local Library' ? meta.album : (folderPrefix || 'Local Import Collection'),
+          duration: meta.duration,
+          source: 'local',
+          coverUrl: meta.coverUrl,
+          audioUrl,
+          filePath: nativePath,
+          genre: meta.genre || 'Local Audio',
+          year: meta.year || new Date().getFullYear(),
+          format: meta.format,
+          bitrate: meta.bitrate,
+          sampleRate: meta.sampleRate,
+          bitDepth: meta.bitDepth,
+          isFavorite: false,
+          playCount: 0,
+          dateAdded: new Date().toISOString().split('T')[0],
+        };
+
+        // In browser mode (no nativePath), save audio blob to IndexedDB
+        if (!nativePath) {
+          saveAudioBlob(track.id, file).catch(() => {});
+        } else {
+          try {
+            const separator = nativePath.includes('\\') ? '\\' : '/';
+            const parts = nativePath.split(separator);
+            parts.pop();
+            const parentDir = parts.join(separator);
+            if (parentDir) {
+              parentDirsSet.add(parentDir);
+            }
+          } catch {}
+        }
+
+        newTracks.push(track);
+      } catch (err) {
+        console.warn('Skipping file import error during batch loop:', err);
+      }
     }
 
     // Save parent directories to config
@@ -277,7 +288,7 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
                 type="text"
                 value={directoryPath}
                 onChange={(e) => setDirectoryPath(e.target.value)}
-                placeholder="/home/username/Music or C:\Users\Username\Music"
+                placeholder={getOsMusicPlaceholder()}
                 disabled={isProcessing}
                 className="flex-1 px-3.5 py-2 bg-black/50 border border-white/15 rounded-lg text-xs font-mono text-white placeholder-white/30 focus:outline-none focus:border-sky-400 transition-colors"
               />

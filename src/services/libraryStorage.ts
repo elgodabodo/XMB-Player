@@ -354,7 +354,7 @@ class LibraryStorageService {
       const key = `${t.album}::${t.artist}`;
       if (!albumMap.has(key)) {
         albumMap.set(key, {
-          id: `alb-${encodeURIComponent(t.album)}`,
+          id: `alb-${encodeURIComponent(t.album)}-${encodeURIComponent(t.artist)}`,
           title: t.album,
           artist: t.artist,
           year: t.year || new Date().getFullYear(),
