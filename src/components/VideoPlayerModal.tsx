@@ -16,6 +16,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
   const [isMuted, setIsMuted] = useState(false);
   const [showOsd, setShowOsd] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
@@ -41,6 +42,11 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
     }
     return () => {
       if (osdTimerRef.current) window.clearTimeout(osdTimerRef.current);
+      if (videoRef.current && video) {
+        try {
+          localStorage.setItem(`xmb_video_pos_${video.id}`, String(videoRef.current.currentTime));
+        } catch {}
+      }
     };
   }, [video, resetOsdTimer]);
 
@@ -64,6 +70,11 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
     videoRef.current.currentTime = clamped;
     setCurrentTime(clamped);
     resetOsdTimer();
+    if (video) {
+      try {
+        localStorage.setItem(`xmb_video_pos_${video.id}`, String(clamped));
+      } catch {}
+    }
   };
 
   const handleStepSeek = (delta: number) => {
@@ -71,6 +82,108 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
     if (!videoRef.current) return;
     handleSeek(videoRef.current.currentTime + delta);
   };
+
+  const handleLoadedMetadata = () => {
+    if (!videoRef.current || !video) return;
+    const dur = videoRef.current.duration || video.duration || 0;
+    setDuration(dur);
+
+    const savedKey = `xmb_video_pos_${video.id}`;
+    const savedTime = parseFloat(localStorage.getItem(savedKey) || '0');
+    if (savedTime > 3 && savedTime < dur - 10) {
+      videoRef.current.currentTime = savedTime;
+      setCurrentTime(savedTime);
+      setResumeNotice(`Resumed playback from ${formatTime(savedTime)}`);
+      setTimeout(() => setResumeNotice(null), 4000);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (!videoRef.current || !video) return;
+    const curr = videoRef.current.currentTime;
+    setCurrentTime(curr);
+    setDuration(videoRef.current.duration || video.duration || 0);
+
+    try {
+      localStorage.setItem(`xmb_video_pos_${video.id}`, String(curr));
+    } catch {}
+  };
+
+  // Gamepad Controller Polling Loop
+  const prevGpButtonsRef = useRef<{ [idx: number]: boolean }>({});
+  const prevGpAxesRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  useEffect(() => {
+    if (!video) return;
+
+    let animId: number;
+    const pollGamepad = () => {
+      const gamepads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
+      const gp = gamepads[0];
+      if (gp) {
+        const justPressed = (btnIdx: number) => {
+          const pressed = Boolean(gp.buttons[btnIdx]?.pressed);
+          const wasPressed = prevGpButtonsRef.current[btnIdx] || false;
+          prevGpButtonsRef.current[btnIdx] = pressed;
+          return pressed && !wasPressed;
+        };
+
+        const currX = gp.axes[0] || 0;
+        const currY = gp.axes[1] || 0;
+        const prevX = prevGpAxesRef.current.x;
+        const prevY = prevGpAxesRef.current.y;
+        prevGpAxesRef.current = { x: currX, y: currY };
+
+        const stickLeftJust = currX < -0.55 && prevX >= -0.45;
+        const stickRightJust = currX > 0.55 && prevX <= 0.45;
+        const stickUpJust = currY < -0.55 && prevY >= -0.45;
+        const stickDownJust = currY > 0.55 && prevY <= 0.45;
+
+        // Cross (0) or Start (9) -> Play/Pause
+        if (justPressed(0) || justPressed(9)) {
+          handleTogglePlay();
+        }
+        // Circle (1) or Triangle (3) -> Close
+        else if (justPressed(1) || justPressed(3)) {
+          soundFx.playCancel();
+          if (videoRef.current && video) {
+            try {
+              localStorage.setItem(`xmb_video_pos_${video.id}`, String(videoRef.current.currentTime));
+            } catch {}
+          }
+          onClose();
+        }
+        // D-Pad Left (14) or Stick Left -> Rewind 10s
+        else if (justPressed(14) || stickLeftJust) {
+          handleStepSeek(-10);
+        }
+        // D-Pad Right (15) or Stick Right -> Forward 10s
+        else if (justPressed(15) || stickRightJust) {
+          handleStepSeek(10);
+        }
+        // D-Pad Up (12) or Stick Up -> Volume Up
+        else if (justPressed(12) || stickUpJust) {
+          handleVolumeChange(volume + 0.05);
+        }
+        // D-Pad Down (13) or Stick Down -> Volume Down
+        else if (justPressed(13) || stickDownJust) {
+          handleVolumeChange(volume - 0.05);
+        }
+        // L1 (4) -> Rewind 30s
+        else if (justPressed(4)) {
+          handleStepSeek(-30);
+        }
+        // R1 (5) -> Forward 30s
+        else if (justPressed(5)) {
+          handleStepSeek(30);
+        }
+      }
+      animId = requestAnimationFrame(pollGamepad);
+    };
+
+    animId = requestAnimationFrame(pollGamepad);
+    return () => cancelAnimationFrame(animId);
+  }, [video, volume, onClose]);
 
   const handleToggleFullscreen = () => {
     soundFx.playSelect();
@@ -189,17 +302,20 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
         playsInline
         className="w-full h-full object-contain cursor-pointer"
         onClick={handleTogglePlay}
-        onTimeUpdate={() => {
-          if (videoRef.current) {
-            setCurrentTime(videoRef.current.currentTime);
-            setDuration(videoRef.current.duration || video.duration || 0);
-          }
-        }}
+        onLoadedMetadata={handleLoadedMetadata}
+        onTimeUpdate={handleTimeUpdate}
         onEnded={() => {
           setIsPlaying(false);
           setShowOsd(true);
         }}
       />
+
+      {/* Resume Notice Toast Banner */}
+      {resumeNotice && (
+        <div className="absolute top-20 z-50 px-4 py-2 rounded-xl bg-sky-500/30 border border-sky-400/50 backdrop-blur-md text-sky-200 text-xs font-mono font-bold shadow-[0_0_20px_rgba(56,189,248,0.5)] animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-none">
+          {resumeNotice}
+        </div>
+      )}
 
       {/* PS3 On-Screen Display (OSD) Overlay */}
       <div

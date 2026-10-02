@@ -29,8 +29,9 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
   if (!isOpen) return null;
 
   const getOsMusicPlaceholder = () => {
-    const isWin = typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent);
-    const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent);
+    const platform = (window as unknown as { api?: { platform?: string } }).api?.platform;
+    const isWin = platform === 'win32' || (typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent));
+    const isMac = platform === 'darwin' || (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent));
     if (isWin) return `C:\\Users\\Username\\Music`;
     if (isMac) return `/Users/username/Music`;
     return `/home/username/Music`;

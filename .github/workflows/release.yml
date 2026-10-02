@@ -56,7 +56,8 @@ jobs:
 
           contextBridge.exposeInMainWorld('api', {
             runCommand: (command) => ipcRenderer.invoke('run-command', command),
-            openFile: (filePath) => ipcRenderer.invoke('open-file', filePath)
+            openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
+            platform: process.platform
           });
           EOF
 
