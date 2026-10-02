@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+}
+
+.font-display {
+  font-family: 'Rajdhani', sans-serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* PS3 XMB Iconic Glow Effects */
+.xmb-glow {
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.75), 0 0 24px rgba(255, 255, 255, 0.4);
+}
+
+.xmb-icon-glow {
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 16px rgba(180, 220, 255, 0.5));
+}
+
+.xmb-box-glow {
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.15), inset 0 0 15px rgba(255, 255, 255, 0.05);
+}
+
+.xmb-accent-glow {
+  box-shadow: 0 0 25px rgba(56, 189, 248, 0.35);
+}
+
+/* Subtle scanlines overlay */
+.scanlines {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  );
+  background-size: 100% 4px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* PS3 XMB Lateral Fade Transitions when switching categories */
+@keyframes xmbSlideInFromRight {
+  0% {
+    opacity: 0;
+    transform: translateX(65px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes xmbSlideInFromLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(-65px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes xmbSlideOutToLeft {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-65px);
+  }
+}
+
+@keyframes xmbSlideOutToRight {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(65px);
+  }
+}
+
+.xmb-slide-in-right {
+  animation: xmbSlideInFromRight 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.xmb-slide-in-left {
+  animation: xmbSlideInFromLeft 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.xmb-slide-out-left {
+  animation: xmbSlideOutToLeft 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none !important;
+}
+
+.xmb-slide-out-right {
+  animation: xmbSlideOutToRight 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none !important;
+}
+

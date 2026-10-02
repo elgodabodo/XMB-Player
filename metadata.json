@@ -1,0 +1,6 @@
+{
+  "name": "XMBPlayer",
+  "description": "Authentic PS3 XMB-themed Linux music player with GStreamer audio pipeline, full local library management, and YouTube Music & Spotify integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
