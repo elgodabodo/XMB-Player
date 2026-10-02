@@ -31,7 +31,7 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Build Vite web app
-        run: npm run build
+        run: npm run build -- --base=./
 
       - name: Generate Electron wrapper
         run: |
