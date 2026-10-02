@@ -531,6 +531,13 @@ export default function App() {
     showSettingFeedback('Library Cleared', 'All songs removed from music collection', 'check');
   }, [refreshLibrary, showSettingFeedback]);
 
+  const handleClearAllVideos = useCallback(() => {
+    soundFx.playCancel();
+    videoService.clearAllVideos();
+    refreshLibrary();
+    showSettingFeedback('Videos Cleared', 'All videos removed from collection', 'check');
+  }, [refreshLibrary, showSettingFeedback]);
+
   // Dynamic Vertical Items Generator: Updates LIVE on any state change!
   const activeVerticalItems = useMemo<XMBItemDef[]>(() => {
     // If inside a subfolder: dynamically generate its items based on live state!
@@ -1105,6 +1112,18 @@ export default function App() {
               setIsImportVideoModalOpen(true);
             },
           },
+          ...(videos.length > 0
+            ? [
+                {
+                  id: 'vid-clear-all',
+                  title: 'Remove All Videos',
+                  subtitle: `Clear all ${videos.length} videos from collection`,
+                  badge: `${videos.length} VIDEOS`,
+                  bulletType: 'wrench' as const,
+                  action: handleClearAllVideos,
+                },
+              ]
+            : []),
           ...videos.map((v) => ({
             id: v.id,
             title: v.title,
@@ -1114,6 +1133,7 @@ export default function App() {
             video: v,
             action: () => {
               soundFx.playSelect();
+              gstEngine.pause();
               setPlayingVideo(v);
             },
           })),
@@ -1274,6 +1294,7 @@ export default function App() {
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (playingVideo) return;
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
       switch (e.key) {
@@ -1518,6 +1539,10 @@ export default function App() {
     let animId: number;
 
     const pollGamepad = () => {
+      if (playingVideo) {
+        animId = requestAnimationFrame(pollGamepad);
+        return;
+      }
       const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
       const gp = gamepads[0];
 

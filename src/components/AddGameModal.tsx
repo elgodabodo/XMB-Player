@@ -10,12 +10,8 @@ interface AddGameModalProps {
   onGameAdded: (game: CustomGameApp) => void;
 }
 
-const getOsPresets = () => {
-  const platform = (window as unknown as { api?: { platform?: string } }).api?.platform;
-  const isWin = platform === 'win32' || (typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent));
-  const isMac = platform === 'darwin' || (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent));
-
-  if (isWin) {
+const getPresetsForOs = (targetOs: 'win' | 'mac' | 'linux') => {
+  if (targetOs === 'win') {
     return [
       {
         title: 'RPCS3 (PS3 Emulator)',
@@ -58,7 +54,7 @@ const getOsPresets = () => {
         description: 'Nintendo GameCube and Wii emulator (Windows)',
       },
     ];
-  } else if (isMac) {
+  } else if (targetOs === 'mac') {
     return [
       {
         title: 'RPCS3 (PS3 Emulator)',
@@ -94,7 +90,7 @@ const getOsPresets = () => {
       },
     ];
   } else {
-    // Linux (Default for AppImage)
+    // Linux
     return [
       {
         title: 'RPCS3 (PS3 Emulator)',
@@ -140,13 +136,19 @@ const getOsPresets = () => {
   }
 };
 
-const PRESETS = getOsPresets();
-
 export const AddGameModal: React.FC<AddGameModalProps> = ({
   isOpen,
   onClose,
   onGameAdded,
 }) => {
+  const [selectedOs, setSelectedOs] = useState<'win' | 'mac' | 'linux'>(() => {
+    const platform = (window as unknown as { api?: { platform?: string } }).api?.platform;
+    if (platform === 'win32' || /Win/i.test(navigator.userAgent)) return 'win';
+    if (platform === 'darwin' || /Mac/i.test(navigator.userAgent)) return 'mac';
+    return 'linux';
+  });
+
+  const presets = getPresetsForOs(selectedOs);
   const [title, setTitle] = useState('');
   const [execPath, setExecPath] = useState('');
   const [args, setArgs] = useState('');
@@ -156,7 +158,7 @@ export const AddGameModal: React.FC<AddGameModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleApplyPreset = (p: typeof PRESETS[0]) => {
+  const handleApplyPreset = (p: typeof presets[0]) => {
     soundFx.playTick();
     setTitle(p.title);
     setExecPath(p.execPath);
@@ -213,18 +215,39 @@ export const AddGameModal: React.FC<AddGameModalProps> = ({
 
         {/* Content */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
-          {/* Quick Presets */}
+          {/* Quick Presets & OS Selector */}
           <div>
-            <label className="text-xs font-semibold text-white/80 uppercase tracking-wider block mb-2">
-              Quick Linux Presets:
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-semibold text-white/80 uppercase tracking-wider">
+                Quick App Presets ({selectedOs === 'win' ? 'Windows .exe' : selectedOs === 'mac' ? 'macOS' : 'Linux'}):
+              </label>
+              <div className="flex gap-1">
+                {(['win', 'mac', 'linux'] as const).map((os) => (
+                  <button
+                    key={os}
+                    type="button"
+                    onClick={() => {
+                      soundFx.playTick();
+                      setSelectedOs(os);
+                    }}
+                    className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase rounded transition-all cursor-pointer ${
+                      selectedOs === os
+                        ? 'bg-sky-500 text-slate-950 shadow-[0_0_8px_rgba(56,189,248,0.5)]'
+                        : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    {os === 'win' ? 'Windows' : os === 'mac' ? 'macOS' : 'Linux'}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex flex-wrap gap-1.5">
-              {PRESETS.map((p, i) => (
+              {presets.map((p: ReturnType<typeof getPresetsForOs>[number], i: number) => (
                 <button
                   key={i}
                   type="button"
                   onClick={() => handleApplyPreset(p)}
-                  className="px-2.5 py-1 text-xs bg-white/5 hover:bg-white/15 border border-white/10 hover:border-white/30 text-white/80 rounded transition-colors"
+                  className="px-2.5 py-1 text-xs bg-white/5 hover:bg-white/15 border border-white/10 hover:border-white/30 text-white/80 rounded transition-colors cursor-pointer"
                 >
                   {p.title}
                 </button>

@@ -123,6 +123,11 @@ class VideoService {
     });
   }
 
+  public clearAllVideos() {
+    this.videos = [];
+    this.saveVideos();
+  }
+
   private saveVideos() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('xmb_local_videos', JSON.stringify(this.videos));
