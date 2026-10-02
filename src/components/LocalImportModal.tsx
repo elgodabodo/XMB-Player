@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { Track } from '../types';
 import { libraryStorage } from '../services/libraryStorage';
 import { audioMetadataService } from '../services/audioMetadataService';
-import { UploadCloud, FileAudio, Check, X, HardDrive, FolderSearch, Folder, ArrowRight, Music } from 'lucide-react';
+import { saveAudioBlob } from '../services/audioDb';
+import { formatFileUrl } from '../services/nativeBridge';
+import { UploadCloud, FileAudio, Check, X, HardDrive, FolderSearch, Folder, ArrowRight, Music, RefreshCw, Trash2 } from 'lucide-react';
 import { soundFx } from '../services/soundFx';
 
 interface LocalImportModalProps {
@@ -21,6 +23,7 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [directoryPath, setDirectoryPath] = useState('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [savedDirs, setSavedDirs] = useState<string[]>(() => libraryStorage.getMusicDirectories());
 
   if (!isOpen) return null;
 
@@ -33,12 +36,15 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (!file.type.startsWith('audio/') && !file.name.match(/\.(mp3|flac|wav|ogg|m4a|aac)$/i)) {
+      if (!file.type.startsWith('audio/') && !file.name.match(/\.(mp3|flac|wav|ogg|m4a|aac|opus|wma)$/i)) {
         continue;
       }
 
-      // Generate local object URL for playback
-      const audioUrl = URL.createObjectURL(file);
+      // Check if Electron native path is available on the File object
+      const nativePath = (file as any).path as string | undefined;
+
+      // Generate local object URL or file URL
+      const audioUrl = nativePath ? formatFileUrl(nativePath) : URL.createObjectURL(file);
 
       // Deep parse ID3v2, ID3v1, FLAC Vorbis metadata & embedded cover images
       const meta = await audioMetadataService.parseFile(file);
@@ -52,6 +58,7 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
         source: 'local',
         coverUrl: meta.coverUrl,
         audioUrl,
+        filePath: nativePath,
         genre: meta.genre || 'Local Audio',
         year: meta.year || new Date().getFullYear(),
         format: meta.format,
@@ -63,6 +70,24 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
         dateAdded: new Date().toISOString().split('T')[0],
       };
 
+      // Always save the audio blob into IndexedDB so it reliably persists across restarts
+      // in both Web, Linux AppImage, and Windows Portable (avoiding Chromium local file:// security blocks)
+      await saveAudioBlob(track.id, file);
+
+      // If nativePath exists, save its parent directory so the directory config is remembered
+      if (nativePath) {
+        try {
+          const separator = nativePath.includes('\\') ? '\\' : '/';
+          const parts = nativePath.split(separator);
+          parts.pop();
+          const parentDir = parts.join(separator);
+          if (parentDir) {
+            libraryStorage.addMusicDirectory(parentDir);
+            setSavedDirs(libraryStorage.getMusicDirectories());
+          }
+        } catch {}
+      }
+
       libraryStorage.addTrack(track);
       newTracks.push(track);
       onTrackImported(track);
@@ -71,11 +96,11 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
     setImportedTracks((prev) => [...prev, ...newTracks]);
     setIsProcessing(false);
     soundFx.playSelect();
-    setStatusMessage(`Successfully imported ${newTracks.length} audio tracks with metadata.`);
+    setStatusMessage(`Successfully imported ${newTracks.length} audio tracks with persistent metadata.`);
   };
 
-  // Pull music from pasted directory path
-  const handlePullFromDirectory = (e: React.FormEvent) => {
+  // Pull music from pasted directory path or scan directory
+  const handlePullFromDirectory = async (e: React.FormEvent) => {
     e.preventDefault();
     const path = directoryPath.trim();
     if (!path) return;
@@ -83,13 +108,29 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
     setIsProcessing(true);
     soundFx.playTick();
 
-    // Parse folder name & artist from path
+    // 1. If in Electron or native scan succeeds:
+    const realScanned = await libraryStorage.scanMusicDirectory(path);
+    setSavedDirs(libraryStorage.getMusicDirectories());
+
+    if (realScanned.length > 0) {
+      realScanned.forEach((t) => onTrackImported(t));
+      setImportedTracks((prev) => [...prev, ...realScanned]);
+      setIsProcessing(false);
+      soundFx.playSelect();
+      setStatusMessage(`Found and registered ${realScanned.length} music tracks from: "${path}"`);
+      setDirectoryPath('');
+      return;
+    }
+
+    // 2. Fallback: Parse folder name & artist from path
     const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
     const segments = normalized.split('/').filter(Boolean);
     const folderName = segments.length > 0 ? segments[segments.length - 1] : 'Music';
     const parentFolder = segments.length > 1 ? segments[segments.length - 2] : 'Collection';
 
-    // Generate tracks indexed from the pasted directory
+    libraryStorage.addMusicDirectory(path);
+    setSavedDirs(libraryStorage.getMusicDirectories());
+
     const demoFiles = [
       { name: '01 - Intro Sequence.flac', format: 'FLAC' as const, duration: 145 },
       { name: '02 - Cybernetic Pulse.flac', format: 'FLAC' as const, duration: 232 },
@@ -110,6 +151,8 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
         duration: f.duration,
         source: 'local',
         coverUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=300&q=80',
+        filePath: `${normalized}/${f.name}`,
+        audioUrl: formatFileUrl(`${normalized}/${f.name}`),
         genre: 'Hi-Res Audio',
         year: 2024,
         format: f.format,
@@ -129,8 +172,24 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
     setImportedTracks((prev) => [...prev, ...added]);
     setIsProcessing(false);
     soundFx.playSelect();
-    setStatusMessage(`Pulled ${added.length} tracks from directory: "${path}"`);
+    setStatusMessage(`Saved directory "${path}" and registered ${added.length} tracks.`);
     setDirectoryPath('');
+  };
+
+  const handleRescanDir = async (dir: string) => {
+    setIsProcessing(true);
+    soundFx.playTick();
+    const tracks = await libraryStorage.scanMusicDirectory(dir);
+    tracks.forEach((t) => onTrackImported(t));
+    setIsProcessing(false);
+    soundFx.playSelect();
+    setStatusMessage(`Rescanned "${dir}": found ${tracks.length} tracks.`);
+  };
+
+  const handleRemoveDir = (dir: string) => {
+    soundFx.playCancel();
+    libraryStorage.removeMusicDirectory(dir);
+    setSavedDirs(libraryStorage.getMusicDirectories());
   };
 
   return (
@@ -257,6 +316,45 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
             <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
               <Check className="w-4 h-4 shrink-0" />
               <span>{statusMessage}</span>
+            </div>
+          )}
+
+          {/* Saved Music Directories Configuration */}
+          {savedDirs.length > 0 && (
+            <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-white/90">
+                <span className="flex items-center gap-1.5 uppercase tracking-wider text-[11px] text-white/70">
+                  <Folder className="w-3.5 h-3.5 text-amber-400" />
+                  Saved Music Directories ({savedDirs.length})
+                </span>
+                <span className="text-[10px] text-white/40">Persistent Configuration</span>
+              </div>
+              <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                {savedDirs.map((dir, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded bg-black/40 border border-white/10 text-xs">
+                    <span className="font-mono text-white/80 truncate text-[11px]">{dir}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleRescanDir(dir)}
+                        disabled={isProcessing}
+                        className="p-1 rounded hover:bg-white/15 text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
+                        title="Rescan Directory"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDir(dir)}
+                        className="p-1 rounded hover:bg-white/15 text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
+                        title="Remove from Saved Directories"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

@@ -9,6 +9,7 @@ export interface Track {
   source: AudioSourceType;
   coverUrl: string;
   audioUrl?: string; // real audio file URL, Blob URL, or synthesized stream
+  filePath?: string; // Persistent local file path (e.g. /home/user/Music/song.flac)
   genre?: string;
   year?: number;
   format?: 'FLAC' | 'MP3' | 'OGG' | 'WAV' | 'AAC';
@@ -171,7 +172,7 @@ export interface SettingNotification {
   id: string;
   title: string;
   detail: string;
-  iconType?: 'check' | 'palette' | 'crossfade' | 'speaker' | 'wrench';
+  iconType?: 'check' | 'palette' | 'crossfade' | 'speaker' | 'wrench' | 'music';
 }
 
 export interface UserProfile {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ExtractedPalette } from '../types';
 import { soundFx } from '../services/soundFx';
 import { Palette, X, Check, RotateCcw, Sparkles } from 'lucide-react';
@@ -104,6 +104,16 @@ export const CustomColorPickerModal: React.FC<CustomColorPickerModalProps> = ({
   const [ribbon1Hex, setRibbon1Hex] = useState(rgbToHex(initialPalette.ribbon1));
   const [ribbon2Hex, setRibbon2Hex] = useState(rgbToHex(initialPalette.ribbon2));
   const [accent, setAccent] = useState(initialPalette.accent || '#38bdf8');
+
+  useEffect(() => {
+    if (isOpen) {
+      setBgTop(initialPalette.bgTop);
+      setBgBottom(initialPalette.bgBottom);
+      setRibbon1Hex(rgbToHex(initialPalette.ribbon1));
+      setRibbon2Hex(rgbToHex(initialPalette.ribbon2));
+      setAccent(initialPalette.accent || '#38bdf8');
+    }
+  }, [isOpen, initialPalette]);
 
   if (!isOpen) return null;
 

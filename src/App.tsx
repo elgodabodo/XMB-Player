@@ -97,7 +97,15 @@ export default function App() {
   const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
 
   // Appearance & Custom Colorway State
-  const [theme, setTheme] = useState<XMBTheme>('original_silver');
+  const [theme, setTheme] = useState<XMBTheme>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('xmb_theme');
+        if (stored) return stored as XMBTheme;
+      } catch {}
+    }
+    return 'original_silver';
+  });
   const [dynamicPalette, setDynamicPalette] = useState<ExtractedPalette | null>(null);
   const [customThemePalette, setCustomThemePalette] = useState<ExtractedPalette>(() => {
     if (typeof window !== 'undefined') {
@@ -116,7 +124,35 @@ export default function App() {
     };
   });
 
-  const [visualizerMode, setVisualizerMode] = useState<VisualizerMode>('wave');
+  const [visualizerMode, setVisualizerMode] = useState<VisualizerMode>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('xmb_visualizer_mode');
+        if (stored) return stored as VisualizerMode;
+      } catch {}
+    }
+    return 'wave';
+  });
+
+  // Save appearance settings across restarts
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('xmb_theme', theme);
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('xmb_custom_palette', JSON.stringify(customThemePalette));
+    }
+  }, [customThemePalette]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('xmb_visualizer_mode', visualizerMode);
+    }
+  }, [visualizerMode]);
+
   const [settingNotification, setSettingNotification] = useState<SettingNotification | null>(null);
 
   // Modals, Picture Viewers, & Context Menus
@@ -295,13 +331,27 @@ export default function App() {
     };
   }, [tracks, currentTrack]);
 
-  // Audio Playback Settings State
-  const [isShuffle, setIsShuffle] = useState<boolean>(false);
-  const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
+  // Audio Playback Settings State with localStorage persistence
+  const [isShuffle, setIsShuffle] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('xmb_is_shuffle') === 'true';
+    }
+    return false;
+  });
+  const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('xmb_repeat_mode');
+      if (stored === 'all' || stored === 'one') return stored;
+    }
+    return 'off';
+  });
 
   const handleToggleShuffle = useCallback(() => {
     setIsShuffle((prev) => {
       const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('xmb_is_shuffle', String(next));
+      }
       showSettingFeedback('Shuffle Mode', next ? 'Shuffle Enabled' : 'Shuffle Disabled', 'music');
       return next;
     });
@@ -314,6 +364,9 @@ export default function App() {
       else if (prev === 'all') next = 'one';
       else next = 'off';
 
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('xmb_repeat_mode', next);
+      }
       const labels = { off: 'Repeat Off', all: 'Repeat All Tracks', one: 'Repeat Current Track' };
       showSettingFeedback('Repeat Mode', labels[next], 'music');
       return next;
@@ -434,6 +487,16 @@ export default function App() {
     libraryStorage.removeTrack(trackId);
     refreshLibrary();
     showSettingFeedback('Library Updated', 'Track removed from library', 'check');
+  }, [refreshLibrary, showSettingFeedback]);
+
+  const handleClearAllTracks = useCallback(() => {
+    soundFx.playCancel();
+    gstEngine.stop();
+    setCurrentTrack(null);
+    setIsPlaying(false);
+    libraryStorage.clearAllTracks();
+    refreshLibrary();
+    showSettingFeedback('Library Cleared', 'All songs removed from music collection', 'check');
   }, [refreshLibrary, showSettingFeedback]);
 
   // Dynamic Vertical Items Generator: Updates LIVE on any state change!
@@ -605,14 +668,28 @@ export default function App() {
       }
 
       if (currentSubFolder === 'all_tracks') {
-        return tracks.map((t) => ({
-          id: t.id,
-          title: t.title,
-          subtitle: `${t.artist} · ${t.album}`,
-          coverUrl: t.coverUrl,
-          track: t,
-          action: () => handlePlayTrack(t),
-        }));
+        return [
+          ...(tracks.length > 0
+            ? [
+                {
+                  id: 'mus-all-clear',
+                  title: 'Remove All Songs',
+                  subtitle: `Clear all ${tracks.length} songs from library`,
+                  badge: `${tracks.length} SONGS`,
+                  bulletType: 'wrench' as const,
+                  action: handleClearAllTracks,
+                },
+              ]
+            : []),
+          ...tracks.map((t) => ({
+            id: t.id,
+            title: t.title,
+            subtitle: `${t.artist} · ${t.album}`,
+            coverUrl: t.coverUrl,
+            track: t,
+            action: () => handlePlayTrack(t),
+          })),
+        ];
       }
 
       if (currentSubFolder === 'albums') {
@@ -837,6 +914,21 @@ export default function App() {
       case 'music':
         return [
           {
+            id: 'mus-remove-all',
+            title: 'Remove All Songs',
+            subtitle: tracks.length > 0 ? `Delete all ${tracks.length} songs from library` : 'Music library is currently empty',
+            badge: tracks.length > 0 ? `${tracks.length} SONGS` : 'EMPTY',
+            bulletType: 'wrench',
+            action: () => {
+              if (tracks.length === 0) {
+                soundFx.playTick();
+                showSettingFeedback('Music Library', 'Library is already empty', 'music');
+                return;
+              }
+              handleClearAllTracks();
+            },
+          },
+          {
             id: 'mus-all',
             title: 'All Tracks',
             subtitle: `${tracks.length} tracks in collection`,
@@ -1030,6 +1122,7 @@ export default function App() {
     currentTrack,
     controllerConnected,
     handlePlayTrack,
+    handleClearAllTracks,
     showSettingFeedback,
     refreshLibrary,
   ]);

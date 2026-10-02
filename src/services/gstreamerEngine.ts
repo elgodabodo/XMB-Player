@@ -6,6 +6,8 @@
  */
 
 import { AudioSink, EqualizerBands, GstPipelineStatus, GstState, Track } from '../types';
+import { formatFileUrl, readFileAsBlob } from './nativeBridge';
+import { getAudioBlob, saveAudioBlob } from './audioDb';
 
 export const EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
@@ -165,18 +167,47 @@ class GStreamerEngine {
     // Update Linux MPRIS2 / MediaSession
     this.updateMediaSession(track);
 
+    // Resolve audio source: check track.audioUrl, IndexedDB, disk fallback, or filePath
+    let audioSrc = track.audioUrl;
+
+    if (!audioSrc || audioSrc.startsWith('blob:')) {
+      try {
+        const blob = await getAudioBlob(track.id);
+        if (blob) {
+          audioSrc = URL.createObjectURL(blob);
+          track.audioUrl = audioSrc;
+        } else if (track.filePath) {
+          const diskBlob = await readFileAsBlob(track.filePath, track.format);
+          if (diskBlob) {
+            await saveAudioBlob(track.id, diskBlob);
+            audioSrc = URL.createObjectURL(diskBlob);
+            track.audioUrl = audioSrc;
+          } else {
+            audioSrc = formatFileUrl(track.filePath);
+          }
+        }
+      } catch {}
+    }
+
+    if (!audioSrc && track.filePath) {
+      audioSrc = formatFileUrl(track.filePath);
+    }
+
     const hasRealAudio = Boolean(
-      track.audioUrl &&
-      (track.audioUrl.startsWith('blob:') ||
-       track.audioUrl.startsWith('http') ||
-       track.audioUrl.startsWith('data:') ||
-       track.audioUrl.startsWith('file:'))
+      audioSrc &&
+      (audioSrc.startsWith('blob:') ||
+       audioSrc.startsWith('http') ||
+       audioSrc.startsWith('data:') ||
+       audioSrc.startsWith('file:') ||
+       audioSrc.startsWith('/') ||
+       /^[a-zA-Z]:/.test(audioSrc))
     );
 
     if (hasRealAudio && this.audioElement) {
       try {
         this.audioElement.pause();
-        this.audioElement.src = track.audioUrl!;
+        const safeSrc = (audioSrc!.startsWith('/') || /^[a-zA-Z]:/.test(audioSrc!)) ? formatFileUrl(audioSrc!) : audioSrc!;
+        this.audioElement.src = safeSrc;
         this.audioElement.currentTime = 0;
         await this.audioElement.play();
         this.setGstState('GST_STATE_PLAYING');
@@ -186,7 +217,38 @@ class GStreamerEngine {
         if (err?.name === 'AbortError') {
           return;
         }
-        console.warn('Real audio playback issue:', err);
+        console.warn('Real audio playback issue, attempting IndexedDB / disk fallback:', err);
+
+        // Fallback 1: load directly from IndexedDB if file:// failed due to Chromium restrictions
+        try {
+          const blob = await getAudioBlob(track.id);
+          if (blob && this.audioElement) {
+            const blobUrl = URL.createObjectURL(blob);
+            track.audioUrl = blobUrl;
+            this.audioElement.src = blobUrl;
+            this.audioElement.currentTime = 0;
+            await this.audioElement.play();
+            this.setGstState('GST_STATE_PLAYING');
+            return;
+          }
+        } catch {}
+
+        // Fallback 2: read from disk using native bridge
+        if (track.filePath && this.audioElement) {
+          try {
+            const diskBlob = await readFileAsBlob(track.filePath, track.format);
+            if (diskBlob) {
+              await saveAudioBlob(track.id, diskBlob);
+              const blobUrl = URL.createObjectURL(diskBlob);
+              track.audioUrl = blobUrl;
+              this.audioElement.src = blobUrl;
+              this.audioElement.currentTime = 0;
+              await this.audioElement.play();
+              this.setGstState('GST_STATE_PLAYING');
+              return;
+            }
+          } catch {}
+        }
       }
     }
 
@@ -321,6 +383,21 @@ class GStreamerEngine {
       this.audioElement.pause();
     }
     this.setGstState('GST_STATE_PAUSED');
+  }
+
+  public stop() {
+    this.stopSynthPlayback();
+    if (this.audioElement) {
+      this.audioElement.pause();
+      this.audioElement.src = '';
+      this.audioElement.currentTime = 0;
+    }
+    this.currentTrack = null;
+    this.currentTime = 0;
+    this.duration = 0;
+    this.setGstState('GST_STATE_NULL');
+    this.notifyTrack();
+    this.notifyTime();
   }
 
   public resume() {

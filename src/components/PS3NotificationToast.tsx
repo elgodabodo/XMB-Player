@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { SettingNotification } from '../types';
-import { Check, Palette, Volume2, Sliders, Wrench, Sparkles } from 'lucide-react';
+import { Check, Palette, Volume2, Sliders, Wrench, Sparkles, Music } from 'lucide-react';
 
 interface PS3NotificationToastProps {
   notification: SettingNotification | null;
@@ -28,6 +28,8 @@ export const PS3NotificationToast: React.FC<PS3NotificationToastProps> = ({
 
   const renderIcon = () => {
     switch (notification.iconType) {
+      case 'music':
+        return <Music className="w-4 h-4 text-sky-400" />;
       case 'palette':
         return <Palette className="w-4 h-4 text-sky-400" />;
       case 'crossfade':
