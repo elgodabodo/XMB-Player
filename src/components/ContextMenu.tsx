@@ -3,6 +3,7 @@ import { ControllerType, Playlist, Track } from '../types';
 import { Play, ListPlus, Heart, Sliders, Trash2, X, Volume2, VolumeX, Minus, Plus, ExternalLink } from 'lucide-react';
 import { soundFx } from '../services/soundFx';
 import { openMediaFile } from '../services/nativeBridge';
+import { ControllerButtonBadge } from './PS3Icons';
 
 interface ContextMenuProps {
   isOpen: boolean;
@@ -244,9 +245,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
             <div className="flex items-center gap-2">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full border border-emerald-400 text-emerald-400 text-xs font-bold">
-                △
-              </span>
+              <ControllerButtonBadge type={controllerType === 'ds4_ds5' ? 'triangle' : 'y'} />
               <span className="font-display uppercase text-sm tracking-wider text-white font-bold">
                 Options Menu
               </span>

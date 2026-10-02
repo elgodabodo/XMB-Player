@@ -289,6 +289,91 @@ export const PS3BulletIcon: React.FC<BulletProps> = ({
 };
 
 /**
+ * Controller Face Button Badge Component
+ * Perfectly centered mathematical vector shapes for PlayStation & Xbox controller prompts
+ */
+export const ControllerButtonBadge: React.FC<{
+  type: 'cross' | 'circle' | 'square' | 'triangle' | 'a' | 'b' | 'x' | 'y';
+  className?: string;
+}> = ({ type, className = '' }) => {
+  switch (type) {
+    case 'triangle':
+      return (
+        <span
+          className={`inline-flex items-center justify-center w-5 h-5 rounded-full border border-emerald-400 text-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)] shrink-0 ${className}`}
+        >
+          <svg className="w-2.5 h-2.5 fill-none stroke-current stroke-[2.5]" viewBox="0 0 24 24">
+            <polygon points="12,3 21,19 3,19" />
+          </svg>
+        </span>
+      );
+    case 'circle':
+      return (
+        <span
+          className={`inline-flex items-center justify-center w-5 h-5 rounded-full border border-rose-500 text-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] shrink-0 ${className}`}
+        >
+          <svg className="w-2.5 h-2.5 fill-none stroke-current stroke-[2.5]" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="8" />
+          </svg>
+        </span>
+      );
+    case 'cross':
+      return (
+        <span
+          className={`inline-flex items-center justify-center w-5 h-5 rounded-full border border-sky-400 text-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.4)] shrink-0 ${className}`}
+        >
+          <svg className="w-2.5 h-2.5 fill-none stroke-current stroke-[2.8]" viewBox="0 0 24 24">
+            <line x1="5" y1="5" x2="19" y2="19" />
+            <line x1="19" y1="5" x2="5" y2="19" />
+          </svg>
+        </span>
+      );
+    case 'square':
+      return (
+        <span
+          className={`inline-flex items-center justify-center w-5 h-5 rounded-full border border-pink-400 text-pink-400 shadow-[0_0_8px_rgba(244,114,182,0.4)] shrink-0 ${className}`}
+        >
+          <svg className="w-2.5 h-2.5 fill-none stroke-current stroke-[2.5]" viewBox="0 0 24 24">
+            <rect x="5" y="5" width="14" height="14" rx="1" />
+          </svg>
+        </span>
+      );
+    case 'a':
+      return (
+        <span
+          className={`inline-flex items-center justify-center w-5 h-5 rounded-full border border-emerald-400 text-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)] text-[11px] font-extrabold font-mono leading-none pt-[1px] shrink-0 ${className}`}
+        >
+          A
+        </span>
+      );
+    case 'b':
+      return (
+        <span
+          className={`inline-flex items-center justify-center w-5 h-5 rounded-full border border-rose-500 text-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] text-[11px] font-extrabold font-mono leading-none pt-[1px] shrink-0 ${className}`}
+        >
+          B
+        </span>
+      );
+    case 'x':
+      return (
+        <span
+          className={`inline-flex items-center justify-center w-5 h-5 rounded-full border border-blue-400 text-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.4)] text-[11px] font-extrabold font-mono leading-none pt-[1px] shrink-0 ${className}`}
+        >
+          X
+        </span>
+      );
+    case 'y':
+      return (
+        <span
+          className={`inline-flex items-center justify-center w-5 h-5 rounded-full border border-amber-400 text-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)] text-[11px] font-extrabold font-mono leading-none pt-[1px] shrink-0 ${className}`}
+        >
+          Y
+        </span>
+      );
+  }
+};
+
+/**
  * Iconic PS3 3D Isometric Cube Focus Icon
  * Shown on the active selected item as seen in image.png!
  */

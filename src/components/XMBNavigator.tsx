@@ -226,6 +226,9 @@ export const XMBNavigator: React.FC<XMBNavigatorProps> = ({
                         alt={item.title}
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80';
+                        }}
                       />
                     </div>
                   ) : isSelected ? (

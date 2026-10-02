@@ -27,8 +27,10 @@ import {
 import { gstEngine } from './services/gstreamerEngine';
 import { soundFx } from './services/soundFx';
 import { colorExtractor } from './services/colorExtractor';
+import { openMediaFile } from './services/nativeBridge';
 import { gameService } from './services/gameService';
 import { videoService } from './services/videoService';
+import sackboyAvatar from './assets/images/sackboy_avatar_1790922791643.jpg';
 import {
   libraryStorage,
   INITIAL_TRACKS,
@@ -293,6 +295,31 @@ export default function App() {
     };
   }, [tracks, currentTrack]);
 
+  // Audio Playback Settings State
+  const [isShuffle, setIsShuffle] = useState<boolean>(false);
+  const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
+
+  const handleToggleShuffle = useCallback(() => {
+    setIsShuffle((prev) => {
+      const next = !prev;
+      showSettingFeedback('Shuffle Mode', next ? 'Shuffle Enabled' : 'Shuffle Disabled', 'music');
+      return next;
+    });
+  }, [showSettingFeedback]);
+
+  const handleToggleRepeat = useCallback(() => {
+    setRepeatMode((prev) => {
+      let next: 'off' | 'all' | 'one' = 'off';
+      if (prev === 'off') next = 'all';
+      else if (prev === 'all') next = 'one';
+      else next = 'off';
+
+      const labels = { off: 'Repeat Off', all: 'Repeat All Tracks', one: 'Repeat Current Track' };
+      showSettingFeedback('Repeat Mode', labels[next], 'music');
+      return next;
+    });
+  }, [showSettingFeedback]);
+
   // Audio actions
   const handlePlayTrack = useCallback((track: Track) => {
     soundFx.playSelect();
@@ -309,17 +336,61 @@ export default function App() {
 
   const handleNextTrack = useCallback(() => {
     if (!currentTrack || tracks.length === 0) return;
+
+    if (repeatMode === 'one') {
+      handlePlayTrack(currentTrack);
+      return;
+    }
+
+    if (isShuffle) {
+      if (tracks.length === 1) {
+        handlePlayTrack(tracks[0]);
+        return;
+      }
+      const currentIndex = tracks.findIndex((t) => t.id === currentTrack.id);
+      let randIndex = Math.floor(Math.random() * tracks.length);
+      while (randIndex === currentIndex) {
+        randIndex = Math.floor(Math.random() * tracks.length);
+      }
+      handlePlayTrack(tracks[randIndex]);
+      return;
+    }
+
     const currentIndex = tracks.findIndex((t) => t.id === currentTrack.id);
+    if (currentIndex === tracks.length - 1 && repeatMode === 'off') {
+      handlePlayTrack(tracks[0]);
+      return;
+    }
     const nextIndex = (currentIndex + 1) % tracks.length;
     handlePlayTrack(tracks[nextIndex]);
-  }, [currentTrack, tracks, handlePlayTrack]);
+  }, [currentTrack, tracks, isShuffle, repeatMode, handlePlayTrack]);
 
   const handlePrevTrack = useCallback(() => {
     if (!currentTrack || tracks.length === 0) return;
+
+    if (repeatMode === 'one') {
+      handlePlayTrack(currentTrack);
+      return;
+    }
+
+    if (isShuffle) {
+      if (tracks.length === 1) {
+        handlePlayTrack(tracks[0]);
+        return;
+      }
+      const currentIndex = tracks.findIndex((t) => t.id === currentTrack.id);
+      let randIndex = Math.floor(Math.random() * tracks.length);
+      while (randIndex === currentIndex) {
+        randIndex = Math.floor(Math.random() * tracks.length);
+      }
+      handlePlayTrack(tracks[randIndex]);
+      return;
+    }
+
     const currentIndex = tracks.findIndex((t) => t.id === currentTrack.id);
     const prevIndex = (currentIndex - 1 + tracks.length) % tracks.length;
     handlePlayTrack(tracks[prevIndex]);
-  }, [currentTrack, tracks, handlePlayTrack]);
+  }, [currentTrack, tracks, isShuffle, repeatMode, handlePlayTrack]);
 
   const handleSeek = useCallback((seconds: number) => {
     gstEngine.seek(seconds);
@@ -467,9 +538,9 @@ export default function App() {
         const visModes: { id: VisualizerMode; name: string }[] = [
           { id: 'wave', name: 'Silk Wave (Classic PS3)' },
           { id: 'earth_cosmos', name: 'Earth Cosmos 3D Globe' },
-          { id: 'starfield_warp', name: 'Starfield Warp (Hyperspace)' },
           { id: 'sonic_radar', name: 'Sonic Bloom Radar' },
           { id: 'vu_spectrum', name: '32-Band VU Spectrum' },
+          { id: 'none', name: 'No Visualizer (Center Album Art)' },
           { id: 'lyrics_synced', name: 'LRCLIB Synced Karaoke Lyrics' },
         ];
         return visModes.map((v) => ({
@@ -660,6 +731,18 @@ export default function App() {
             title: 'Playback Statistics',
             subtitle: `${tracks.length} tracks indexed · ${games.length} games installed`,
             bulletType: 'clock',
+          },
+          {
+            id: 'usr-credits-grim',
+            title: 'Grim_PKG',
+            subtitle: 'Credits · Vibe Coder',
+            coverUrl: sackboyAvatar,
+            badge: 'CREDITS',
+            bulletType: 'user',
+            action: () => {
+              soundFx.playSelect();
+              showSettingFeedback('Credits', 'Grim_PKG · Vibe Coder', 'check');
+            },
           },
         ];
 
@@ -993,8 +1076,16 @@ export default function App() {
 
       switch (e.key) {
         case 'ArrowLeft':
-        case 'KeyQ':
-          if (!currentSubFolder && !isFullVisualizerView && viewingPictureIndex === null && !contextTrack && !contextPicture) {
+        case 'KeyA':
+          if (isFullVisualizerView) {
+            e.preventDefault();
+            soundFx.playTick();
+            const visList: VisualizerMode[] = ['wave', 'earth_cosmos', 'sonic_radar', 'vu_spectrum', 'none', 'lyrics_synced'];
+            setVisualizerMode((prev) => {
+              const idx = visList.indexOf(prev);
+              return visList[(idx - 1 + visList.length) % visList.length];
+            });
+          } else if (!currentSubFolder && viewingPictureIndex === null && !contextTrack && !contextPicture) {
             soundFx.playTick();
             setCategoryIndex((prev) => (prev - 1 + AUTHENTIC_PS3_CATEGORIES.length) % AUTHENTIC_PS3_CATEGORIES.length);
             setItemIndex(0);
@@ -1002,8 +1093,16 @@ export default function App() {
           break;
 
         case 'ArrowRight':
-        case 'KeyE':
-          if (!currentSubFolder && !isFullVisualizerView && viewingPictureIndex === null && !contextTrack && !contextPicture) {
+        case 'KeyD':
+          if (isFullVisualizerView) {
+            e.preventDefault();
+            soundFx.playTick();
+            const visList: VisualizerMode[] = ['wave', 'earth_cosmos', 'sonic_radar', 'vu_spectrum', 'none', 'lyrics_synced'];
+            setVisualizerMode((prev) => {
+              const idx = visList.indexOf(prev);
+              return visList[(idx + 1) % visList.length];
+            });
+          } else if (!currentSubFolder && viewingPictureIndex === null && !contextTrack && !contextPicture) {
             soundFx.playTick();
             setCategoryIndex((prev) => (prev + 1) % AUTHENTIC_PS3_CATEGORIES.length);
             setItemIndex(0);
@@ -1012,7 +1111,15 @@ export default function App() {
 
         case 'ArrowUp':
         case 'KeyW':
-          if (!isFullVisualizerView && viewingPictureIndex === null && !contextTrack && !contextPicture) {
+          if (isFullVisualizerView) {
+            e.preventDefault();
+            soundFx.playTick();
+            const visList: VisualizerMode[] = ['wave', 'earth_cosmos', 'sonic_radar', 'vu_spectrum', 'none', 'lyrics_synced'];
+            setVisualizerMode((prev) => {
+              const idx = visList.indexOf(prev);
+              return visList[(idx - 1 + visList.length) % visList.length];
+            });
+          } else if (viewingPictureIndex === null && !contextTrack && !contextPicture) {
             e.preventDefault();
             soundFx.playTick();
             setItemIndex((prev) => Math.max(0, prev - 1));
@@ -1021,7 +1128,15 @@ export default function App() {
 
         case 'ArrowDown':
         case 'KeyS':
-          if (!isFullVisualizerView && viewingPictureIndex === null && !contextTrack && !contextPicture) {
+          if (isFullVisualizerView) {
+            e.preventDefault();
+            soundFx.playTick();
+            const visList: VisualizerMode[] = ['wave', 'earth_cosmos', 'sonic_radar', 'vu_spectrum', 'none', 'lyrics_synced'];
+            setVisualizerMode((prev) => {
+              const idx = visList.indexOf(prev);
+              return visList[(idx + 1) % visList.length];
+            });
+          } else if (viewingPictureIndex === null && !contextTrack && !contextPicture) {
             e.preventDefault();
             soundFx.playTick();
             setItemIndex((prev) => Math.min(activeVerticalItems.length - 1, prev + 1));
@@ -1255,6 +1370,8 @@ export default function App() {
         // Case A: Options Menu for Track is OPEN -> Controller navigates it!
         if (contextTrack) {
           const customPlaylists = playlists.filter((p) => !p.isSystem);
+          const hasAudioUrl = Boolean(contextTrack.audioUrl);
+          const totalTrackActions = 3 + customPlaylists.length + 1 + (hasAudioUrl ? 1 : 0) + 1;
 
           // If focused on the Volume item (index 1), allow left/right to change volume in steps of 5 smoothly!
           if (contextMenuIndex === 1) {
@@ -1280,33 +1397,46 @@ export default function App() {
             setContextMenuIndex((i) => Math.max(0, i - 1));
           } else if (downPressed) {
             soundFx.playTick();
-            setContextMenuIndex((i) => Math.min(contextMenuActionCount - 1, i + 1));
+            setContextMenuIndex((i) => Math.min(totalTrackActions - 1, i + 1));
           } else if (crossPressed) {
-            // Trigger action at contextMenuIndex
-            if (contextMenuIndex === 0) {
+            let currIdx = 0;
+            if (contextMenuIndex === currIdx++) {
               soundFx.playSelect();
               handlePlayTrack(contextTrack);
               setContextTrack(null);
-            } else if (contextMenuIndex === 1) {
+            } else if (contextMenuIndex === currIdx++) {
               soundFx.playTick();
               handleToggleMute();
-            } else if (contextMenuIndex === 2) {
+            } else if (contextMenuIndex === currIdx++) {
               soundFx.playSelect();
               handleToggleFavorite(contextTrack.id);
               setContextTrack(null);
-            } else if (contextMenuIndex >= 3 && contextMenuIndex < 3 + customPlaylists.length) {
-              const pl = customPlaylists[contextMenuIndex - 3];
-              soundFx.playSelect();
-              handleAddToPlaylist(pl.id, contextTrack);
-              setContextTrack(null);
-            } else if (contextMenuIndex === 3 + customPlaylists.length) {
-              soundFx.playSelect();
-              setIsGstModalOpen(true);
-              setContextTrack(null);
-            } else if (contextMenuIndex === 3 + customPlaylists.length + 1) {
-              soundFx.playCancel();
-              handleDeleteTrack(contextTrack.id);
-              setContextTrack(null);
+            } else {
+              let playlistTriggered = false;
+              for (let plIdx = 0; plIdx < customPlaylists.length; plIdx++) {
+                if (contextMenuIndex === currIdx++) {
+                  soundFx.playSelect();
+                  handleAddToPlaylist(customPlaylists[plIdx].id, contextTrack);
+                  setContextTrack(null);
+                  playlistTriggered = true;
+                  break;
+                }
+              }
+              if (!playlistTriggered) {
+                if (contextMenuIndex === currIdx++) {
+                  soundFx.playSelect();
+                  setIsGstModalOpen(true);
+                  setContextTrack(null);
+                } else if (hasAudioUrl && contextMenuIndex === currIdx++) {
+                  soundFx.playSelect();
+                  openMediaFile(contextTrack.audioUrl || contextTrack.title);
+                  setContextTrack(null);
+                } else if (contextMenuIndex === currIdx++) {
+                  soundFx.playCancel();
+                  handleDeleteTrack(contextTrack.id);
+                  setContextTrack(null);
+                }
+              }
             }
           } else if (circlePressed || trianglePressed) {
             soundFx.playCancel();
@@ -1354,7 +1484,34 @@ export default function App() {
             setViewingPictureIndex(null);
           }
         }
-        // Case D: Standard XMB Navigation
+        // Case D: Full Visualizer Screen Controls
+        else if (isFullVisualizerView) {
+          const visList: VisualizerMode[] = ['wave', 'earth_cosmos', 'sonic_radar', 'vu_spectrum', 'none', 'lyrics_synced'];
+          const currentIdx = visList.indexOf(visualizerMode);
+
+          if (leftPressed || upPressed) {
+            soundFx.playTick();
+            const nextIdx = (currentIdx - 1 + visList.length) % visList.length;
+            setVisualizerMode(visList[nextIdx]);
+          } else if (rightPressed || downPressed) {
+            soundFx.playTick();
+            const nextIdx = (currentIdx + 1) % visList.length;
+            setVisualizerMode(visList[nextIdx]);
+          } else if (crossPressed || squarePressed) {
+            soundFx.playSelect();
+            handleTogglePlay();
+          } else if (circlePressed) {
+            soundFx.playCancel();
+            setIsFullVisualizerView(false);
+          } else if (l2Pressed) {
+            soundFx.playTick();
+            handlePrevTrack();
+          } else if (r2Pressed) {
+            soundFx.playTick();
+            handleNextTrack();
+          }
+        }
+        // Case E: Standard XMB Navigation
         else {
           if (leftPressed) {
             if (!currentSubFolder && !isFullVisualizerView) {
@@ -1458,7 +1615,7 @@ export default function App() {
       {/* Real-time Dynamic Silk Ribbon Canvas Background with Custom Palette */}
       <XMBWaveBackground
         theme={theme}
-        interactiveAudio={isPlaying}
+        interactiveAudio={false}
         dynamicPalette={dynamicPalette}
         customPalette={customThemePalette}
       />
@@ -1498,6 +1655,13 @@ export default function App() {
             duration={duration}
             mode={visualizerMode}
             onModeChange={setVisualizerMode}
+            theme={theme}
+            customThemePalette={customThemePalette}
+            dynamicPalette={dynamicPalette}
+            isShuffle={isShuffle}
+            repeatMode={repeatMode}
+            onToggleShuffle={handleToggleShuffle}
+            onToggleRepeat={handleToggleRepeat}
           />
         ) : (
           <XMBNavigator
@@ -1540,15 +1704,28 @@ export default function App() {
         isPlaying={isPlaying}
         controllerType={controllerType}
         controllerConnected={controllerConnected}
+        isVisualizerView={isFullVisualizerView}
       />
 
-      {/* Authentic Now Playing Album Cover Jacket in Bottom Right */}
-      <NowPlayingMiniJacket
-        currentTrack={currentTrack}
-        isPlaying={isPlaying}
-        onTogglePlay={handleTogglePlay}
-        onOpenVisualizer={() => setIsFullVisualizerView(true)}
-      />
+      {/* Authentic Now Playing Album Cover Jacket in Bottom Right (Hidden inside Visualizer Screen) */}
+      {!isFullVisualizerView && (
+        <NowPlayingMiniJacket
+          currentTrack={currentTrack}
+          isPlaying={isPlaying}
+          currentTime={currentTime}
+          duration={duration}
+          onTogglePlay={handleTogglePlay}
+          onOpenVisualizer={() => setIsFullVisualizerView(true)}
+          onSeek={handleSeek}
+          theme={theme}
+          customThemePalette={customThemePalette}
+          dynamicPalette={dynamicPalette}
+          isShuffle={isShuffle}
+          repeatMode={repeatMode}
+          onToggleShuffle={handleToggleShuffle}
+          onToggleRepeat={handleToggleRepeat}
+        />
+      )}
 
       {/* Fullscreen Picture Viewer Modal */}
       <PictureViewerModal

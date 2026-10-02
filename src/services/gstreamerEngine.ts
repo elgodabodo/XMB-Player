@@ -2,7 +2,7 @@
  * Linux GStreamer Audio Engine & Web Audio DSP Pipeline
  * Models a complete GStreamer 1.0 pipeline with 10-band equalizer,
  * multi-sink routing (PipeWire, PulseAudio, ALSA, JACK), real-time FFT analyzer,
- * MPRIS2 D-Bus session simulation, and high-fidelity synthesizer fallback.
+ * smooth track transitions with zero clicks/buzzing, and clean resource management.
  */
 
 import { AudioSink, EqualizerBands, GstPipelineStatus, GstState, Track } from '../types';
@@ -33,9 +33,8 @@ class GStreamerEngine {
 
   // Synth musical generator for tracks without direct audio URL
   private synthInterval: number | null = null;
-  private synthNotes: number[] = [220, 261.63, 293.66, 329.63, 392, 440, 523.25, 587.33];
-  private synthStep = 0;
   private synthBassOsc: OscillatorNode | null = null;
+  private synthBassGain: GainNode | null = null;
   private isSynthesizing = false;
 
   // State
@@ -69,7 +68,7 @@ class GStreamerEngine {
       this.buildDspPipeline();
     }
     if (this.audioCtx && this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume();
+      this.audioCtx.resume().catch(() => {});
     }
   }
 
@@ -79,7 +78,7 @@ class GStreamerEngine {
     this.audioElement.preload = 'auto';
 
     this.audioElement.addEventListener('timeupdate', () => {
-      if (this.audioElement) {
+      if (this.audioElement && !this.isSynthesizing) {
         this.currentTime = this.audioElement.currentTime;
         this.duration = this.audioElement.duration || this.currentTrack?.duration || 0;
         this.notifyTime();
@@ -99,13 +98,6 @@ class GStreamerEngine {
         this.setGstState('GST_STATE_PAUSED');
       }
     });
-
-    this.audioElement.addEventListener('error', () => {
-      // If external audio source fails or blocked by CORS, fallback to real synth playback
-      if (this.currentTrack && this.gstState === 'GST_STATE_PLAYING') {
-        this.startSynthPlayback();
-      }
-    });
   }
 
   private buildDspPipeline() {
@@ -113,7 +105,7 @@ class GStreamerEngine {
 
     // Gain / Volume Node
     this.gainNode = this.audioCtx.createGain();
-    this.gainNode.gain.setValueAtTime(this.volume, this.audioCtx.currentTime);
+    this.gainNode.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.audioCtx.currentTime);
 
     // FFT Analyser Node for Visualizers
     this.analyserNode = this.audioCtx.createAnalyser();
@@ -154,7 +146,7 @@ class GStreamerEngine {
         this.mediaSourceNode = this.audioCtx.createMediaElementSource(this.audioElement);
         this.mediaSourceNode.connect(this.eqFilters[0]);
       } catch {
-        // Source already connected or restricted
+        // Fallback to direct element output if media source routing is unavailable
       }
     }
   }
@@ -162,9 +154,10 @@ class GStreamerEngine {
   public async playTrack(track: Track) {
     this.initAudioContext();
     this.stopSynthPlayback();
+
     this.currentTrack = track;
     this.currentTime = 0;
-    this.duration = track.duration;
+    this.duration = track.duration || 180;
 
     this.notifyTrack();
     this.setGstState('GST_STATE_READY');
@@ -172,20 +165,33 @@ class GStreamerEngine {
     // Update Linux MPRIS2 / MediaSession
     this.updateMediaSession(track);
 
-    if (track.audioUrl && track.audioUrl.startsWith('http') || track.audioUrl?.startsWith('blob:')) {
-      if (this.audioElement) {
-        try {
-          this.audioElement.src = track.audioUrl;
-          await this.audioElement.play();
-          this.setGstState('GST_STATE_PLAYING');
+    const hasRealAudio = Boolean(
+      track.audioUrl &&
+      (track.audioUrl.startsWith('blob:') ||
+       track.audioUrl.startsWith('http') ||
+       track.audioUrl.startsWith('data:') ||
+       track.audioUrl.startsWith('file:'))
+    );
+
+    if (hasRealAudio && this.audioElement) {
+      try {
+        this.audioElement.pause();
+        this.audioElement.src = track.audioUrl!;
+        this.audioElement.currentTime = 0;
+        await this.audioElement.play();
+        this.setGstState('GST_STATE_PLAYING');
+        return;
+      } catch (err: any) {
+        // Ignore AbortError when rapidly clicking between tracks
+        if (err?.name === 'AbortError') {
           return;
-        } catch {
-          // Playback failed or stream CORS blocked -> fallback gracefully to real synth music generator
-          this.startSynthPlayback();
         }
+        console.warn('Real audio playback issue:', err);
       }
-    } else {
-      // Synthesized real music generator with track scale and rhythmic sequence
+    }
+
+    // Only synthesize if explicitly a synthetic track or no real audio stream
+    if (!hasRealAudio) {
       this.startSynthPlayback();
     }
   }
@@ -194,6 +200,7 @@ class GStreamerEngine {
     this.initAudioContext();
     if (!this.audioCtx || !this.eqFilters[0]) return;
 
+    this.stopSynthPlayback();
     this.isSynthesizing = true;
     this.setGstState('GST_STATE_PLAYING');
 
@@ -209,60 +216,69 @@ class GStreamerEngine {
       ambient: [baseFreq * 0.75, baseFreq, baseFreq * 1.333, baseFreq * 1.5, baseFreq * 2, baseFreq * 2.25],
     };
 
-    this.synthNotes = scales[scale] || scales.pentatonic;
+    const synthNotes = scales[scale] || scales.pentatonic;
 
     // Steady warm bass drone
     try {
       this.synthBassOsc = this.audioCtx.createOscillator();
-      const bassGain = this.audioCtx.createGain();
-      this.synthBassOsc.type = 'triangle';
+      this.synthBassGain = this.audioCtx.createGain();
+      this.synthBassOsc.type = 'sine';
       this.synthBassOsc.frequency.setValueAtTime(baseFreq * 0.5, this.audioCtx.currentTime);
 
-      bassGain.gain.setValueAtTime(0.08 * (this.isMuted ? 0 : this.volume), this.audioCtx.currentTime);
-      this.synthBassOsc.connect(bassGain);
-      bassGain.connect(this.eqFilters[0]);
+      const currentVol = this.isMuted ? 0 : this.volume * 0.05;
+      this.synthBassGain.gain.setValueAtTime(currentVol, this.audioCtx.currentTime);
+
+      this.synthBassOsc.connect(this.synthBassGain);
+      this.synthBassGain.connect(this.eqFilters[0]);
       this.synthBassOsc.start();
     } catch {}
 
     // Melodic arpeggio sequencer
     const bpm = track?.synthParams?.tempo || 108;
     const stepIntervalMs = (60 / bpm / 2) * 1000;
-
-    if (this.synthInterval) {
-      window.clearInterval(this.synthInterval);
-    }
+    let synthStep = 0;
 
     this.synthInterval = window.setInterval(() => {
       if (!this.audioCtx || this.gstState !== 'GST_STATE_PLAYING' || !this.isSynthesizing) return;
 
       const t = this.audioCtx.currentTime;
-      this.synthStep++;
+      synthStep++;
 
-      // Melodic note
-      if (this.synthStep % 2 === 0 || Math.random() > 0.3) {
-        const noteIndex = Math.floor(Math.random() * this.synthNotes.length);
-        const freq = this.synthNotes[noteIndex];
+      if (synthStep % 2 === 0 || Math.random() > 0.35) {
+        const noteIndex = Math.floor(Math.random() * synthNotes.length);
+        const freq = synthNotes[noteIndex];
 
-        const noteOsc = this.audioCtx.createOscillator();
-        const noteGain = this.audioCtx.createGain();
+        try {
+          const noteOsc = this.audioCtx.createOscillator();
+          const noteGain = this.audioCtx.createGain();
 
-        noteOsc.type = this.currentTrack?.synthParams?.leadType || 'sine';
-        noteOsc.frequency.setValueAtTime(freq, t);
+          noteOsc.type = this.currentTrack?.synthParams?.leadType || 'sine';
+          noteOsc.frequency.setValueAtTime(freq, t);
 
-        const decay = 0.2 + (Math.random() * 0.25);
-        noteGain.gain.setValueAtTime(0.09 * (this.isMuted ? 0 : this.volume), t);
-        noteGain.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+          const decay = 0.2 + Math.random() * 0.2;
+          const peakVol = Math.max(0.001, (this.isMuted ? 0 : this.volume) * 0.06);
 
-        noteOsc.connect(noteGain);
-        noteGain.connect(this.eqFilters[0]);
+          noteGain.gain.setValueAtTime(peakVol, t);
+          noteGain.gain.linearRampToValueAtTime(0.0001, t + decay);
 
-        noteOsc.start(t);
-        noteOsc.stop(t + decay + 0.05);
+          noteOsc.connect(noteGain);
+          noteGain.connect(this.eqFilters[0]);
+
+          noteOsc.start(t);
+          noteOsc.stop(t + decay + 0.05);
+
+          // Disconnect on end to free resources cleanly
+          setTimeout(() => {
+            try {
+              noteOsc.disconnect();
+              noteGain.disconnect();
+            } catch {}
+          }, (decay + 0.1) * 1000);
+        } catch {}
       }
 
-      // Track time progress
-      this.currentTime += (stepIntervalMs / 1000);
-      if (this.currentTrack && this.currentTime >= this.currentTrack.duration) {
+      this.currentTime += stepIntervalMs / 1000;
+      if (this.currentTrack && this.currentTime >= (this.currentTrack.duration || 180)) {
         this.handleTrackEnded();
       } else {
         this.notifyTime();
@@ -276,12 +292,23 @@ class GStreamerEngine {
       window.clearInterval(this.synthInterval);
       this.synthInterval = null;
     }
+
     if (this.synthBassOsc) {
       try {
+        if (this.synthBassGain && this.audioCtx) {
+          this.synthBassGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
+        }
         this.synthBassOsc.stop();
         this.synthBassOsc.disconnect();
       } catch {}
       this.synthBassOsc = null;
+    }
+
+    if (this.synthBassGain) {
+      try {
+        this.synthBassGain.disconnect();
+      } catch {}
+      this.synthBassGain = null;
     }
   }
 
@@ -302,7 +329,7 @@ class GStreamerEngine {
       return;
     }
     if (this.audioElement && this.audioElement.paused) {
-      this.audioElement.play().catch(() => this.startSynthPlayback());
+      this.audioElement.play().catch(() => {});
     }
     this.setGstState('GST_STATE_PLAYING');
   }
@@ -331,12 +358,18 @@ class GStreamerEngine {
     if (this.gainNode && this.audioCtx) {
       this.gainNode.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.audioCtx.currentTime);
     }
+    if (this.synthBassGain && this.audioCtx) {
+      this.synthBassGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume * 0.05, this.audioCtx.currentTime);
+    }
   }
 
   public toggleMute() {
     this.isMuted = !this.isMuted;
     if (this.gainNode && this.audioCtx) {
       this.gainNode.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.audioCtx.currentTime);
+    }
+    if (this.synthBassGain && this.audioCtx) {
+      this.synthBassGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume * 0.05, this.audioCtx.currentTime);
     }
     if (this.audioElement) {
       this.audioElement.muted = this.isMuted;
@@ -353,7 +386,6 @@ class GStreamerEngine {
 
   public setSink(sink: AudioSink) {
     this.selectedSink = sink;
-    // Simulate brief pipeline state transition
     const prevState = this.gstState;
     this.setGstState('GST_STATE_READY');
     setTimeout(() => {
@@ -457,7 +489,6 @@ class GStreamerEngine {
     this.stopSynthPlayback();
     this.currentTime = 0;
     this.setGstState('GST_STATE_READY');
-    // Dispatch custom event for playlist auto-next
     window.dispatchEvent(new CustomEvent('xmb:trackEnded'));
   }
 

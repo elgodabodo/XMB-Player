@@ -88,6 +88,18 @@ export const XMBWaveBackground: React.FC<XMBWaveBackgroundProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const themeRef = useRef(theme);
+  const interactiveAudioRef = useRef(interactiveAudio);
+  const dynamicPaletteRef = useRef(dynamicPalette);
+  const customPaletteRef = useRef(customPalette);
+
+  useEffect(() => {
+    themeRef.current = theme;
+    interactiveAudioRef.current = interactiveAudio;
+    dynamicPaletteRef.current = dynamicPalette;
+    customPaletteRef.current = customPalette;
+  });
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -124,9 +136,14 @@ export const XMBWaveBackground: React.FC<XMBWaveBackgroundProps> = ({
     const render = () => {
       time += 0.009;
 
+      const currTheme = themeRef.current;
+      const currInteractiveAudio = interactiveAudioRef.current;
+      const currDynamicPalette = dynamicPaletteRef.current;
+      const currCustomPalette = customPaletteRef.current;
+
       // Audio analysis for wave reactivity
       let audioBoost = 0;
-      if (interactiveAudio) {
+      if (currInteractiveAudio) {
         const freqData = gstEngine.getFrequencyData();
         let sum = 0;
         for (let i = 0; i < 32; i++) {
@@ -137,23 +154,23 @@ export const XMBWaveBackground: React.FC<XMBWaveBackgroundProps> = ({
 
       // Determine palette
       let palette: ThemePalette;
-      if (theme === 'custom' && customPalette) {
+      if (currTheme === 'custom' && currCustomPalette) {
         palette = {
-          bgTop: customPalette.bgTop,
-          bgBottom: customPalette.bgBottom,
-          ribbon1: customPalette.ribbon1,
-          ribbon2: customPalette.ribbon2,
-          ribbon3: customPalette.ribbon3,
+          bgTop: currCustomPalette.bgTop,
+          bgBottom: currCustomPalette.bgBottom,
+          ribbon1: currCustomPalette.ribbon1,
+          ribbon2: currCustomPalette.ribbon2,
+          ribbon3: currCustomPalette.ribbon3,
         };
-      } else if (theme === 'album_art' && dynamicPalette) {
+      } else if (currTheme === 'album_art' && currDynamicPalette) {
         palette = {
-          bgTop: dynamicPalette.bgTop,
-          bgBottom: dynamicPalette.bgBottom,
-          ribbon1: dynamicPalette.ribbon1,
-          ribbon2: dynamicPalette.ribbon2,
-          ribbon3: dynamicPalette.ribbon3,
+          bgTop: currDynamicPalette.bgTop,
+          bgBottom: currDynamicPalette.bgBottom,
+          ribbon1: currDynamicPalette.ribbon1,
+          ribbon2: currDynamicPalette.ribbon2,
+          ribbon3: currDynamicPalette.ribbon3,
         };
-      } else if (theme === 'time_of_day') {
+      } else if (currTheme === 'time_of_day') {
         const hour = new Date().getHours() + new Date().getMinutes() / 60;
         if (hour >= 5 && hour < 9) {
           palette = THEME_PALETTES.amber_gold; // Dawn
@@ -165,7 +182,7 @@ export const XMBWaveBackground: React.FC<XMBWaveBackgroundProps> = ({
           palette = THEME_PALETTES.original_silver; // Night
         }
       } else {
-        palette = THEME_PALETTES[theme as keyof typeof THEME_PALETTES] || THEME_PALETTES.original_silver;
+        palette = THEME_PALETTES[currTheme as keyof typeof THEME_PALETTES] || THEME_PALETTES.original_silver;
       }
 
       // Background Gradient
@@ -297,7 +314,7 @@ export const XMBWaveBackground: React.FC<XMBWaveBackgroundProps> = ({
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
     };
-  }, [theme, interactiveAudio, dynamicPalette, customPalette]);
+  }, []);
 
   return (
     <canvas

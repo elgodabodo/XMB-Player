@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ControllerType, PictureItem } from '../types';
 import { soundFx } from '../services/soundFx';
 import { Maximize2, User, Palette, X } from 'lucide-react';
+import { ControllerButtonBadge } from './PS3Icons';
 
 interface PictureContextMenuProps {
   isOpen: boolean;
@@ -126,11 +127,9 @@ export const PictureContextMenu: React.FC<PictureContextMenuProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <div className="flex items-center gap-2">
+              <ControllerButtonBadge type={controllerType === 'ds4_ds5' ? 'triangle' : 'y'} />
               <span className="font-sans font-bold text-white tracking-wider text-sm uppercase">
                 Photo Options
-              </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                △
               </span>
             </div>
             <button

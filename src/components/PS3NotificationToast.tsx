@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { SettingNotification } from '../types';
 import { Check, Palette, Volume2, Sliders, Wrench, Sparkles } from 'lucide-react';
 
@@ -11,13 +11,18 @@ export const PS3NotificationToast: React.FC<PS3NotificationToastProps> = ({
   notification,
   onDismiss,
 }) => {
+  const onDismissRef = useRef(onDismiss);
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  });
+
   useEffect(() => {
     if (!notification) return;
     const timer = setTimeout(() => {
-      onDismiss();
-    }, 2800);
+      onDismissRef.current();
+    }, 2500);
     return () => clearTimeout(timer);
-  }, [notification, onDismiss]);
+  }, [notification?.id]);
 
   if (!notification) return null;
 

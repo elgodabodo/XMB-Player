@@ -95,8 +95,8 @@ export type VisualizerMode =
   | 'wave' 
   | 'earth_cosmos' 
   | 'vu_spectrum' 
-  | 'starfield_warp' 
   | 'sonic_radar' 
+  | 'none'
   | 'lyrics_synced';
 
 export interface LyricLine {

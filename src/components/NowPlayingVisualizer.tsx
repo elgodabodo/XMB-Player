@@ -1,17 +1,19 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { gstEngine } from '../services/gstreamerEngine';
 import { lyricsService } from '../services/lyricsService';
-import { LyricLine, LyricsData, Track, VisualizerMode } from '../types';
+import { ExtractedPalette, LyricLine, LyricsData, Track, VisualizerMode, XMBTheme } from '../types';
 import {
   Play,
   Pause,
   SkipBack,
   SkipForward,
+  Shuffle,
+  Repeat,
+  Repeat1,
   Disc,
   Globe,
   Activity,
   Waves,
-  Sparkles,
   Radio,
   FileText,
   Search,
@@ -20,6 +22,46 @@ import {
   Volume2,
 } from 'lucide-react';
 import { soundFx } from '../services/soundFx';
+
+function getVisualizerThemeRGB(
+  theme?: XMBTheme,
+  customPalette?: ExtractedPalette | null,
+  dynamicPalette?: ExtractedPalette | null
+): { primary: [number, number, number]; secondary: [number, number, number]; accent: [number, number, number] } {
+  const hexToRgb = (hex: string): [number, number, number] => {
+    const clean = hex.replace('#', '');
+    const num = parseInt(clean, 16);
+    return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+  };
+
+  if (theme === 'custom' && customPalette) {
+    return {
+      primary: customPalette.ribbon1,
+      secondary: customPalette.ribbon2,
+      accent: hexToRgb(customPalette.accent),
+    };
+  }
+
+  if (theme === 'album_art' && dynamicPalette) {
+    return {
+      primary: dynamicPalette.ribbon1,
+      secondary: dynamicPalette.ribbon2,
+      accent: hexToRgb(dynamicPalette.accent),
+    };
+  }
+
+  const palettes: Record<string, { primary: [number, number, number]; secondary: [number, number, number]; accent: [number, number, number] }> = {
+    original_silver: { primary: [230, 235, 245], secondary: [170, 180, 195], accent: [255, 255, 255] },
+    midnight: { primary: [180, 210, 240], secondary: [120, 150, 180], accent: [100, 180, 255] },
+    classic_red: { primary: [255, 90, 100], secondary: [220, 40, 60], accent: [255, 180, 190] },
+    ocean_blue: { primary: [100, 200, 255], secondary: [30, 120, 210], accent: [180, 230, 255] },
+    emerald: { primary: [90, 230, 160], secondary: [20, 160, 90], accent: [180, 255, 210] },
+    sakura: { primary: [255, 140, 230], secondary: [190, 60, 160], accent: [255, 210, 245] },
+    amber_gold: { primary: [255, 200, 80], secondary: [210, 140, 30], accent: [255, 235, 160] },
+  };
+
+  return palettes[theme || 'ocean_blue'] || palettes.ocean_blue;
+}
 
 interface NowPlayingVisualizerProps {
   currentTrack: Track | null;
@@ -32,6 +74,13 @@ interface NowPlayingVisualizerProps {
   duration: number;
   mode: VisualizerMode;
   onModeChange: (mode: VisualizerMode) => void;
+  theme?: XMBTheme;
+  customThemePalette?: ExtractedPalette | null;
+  dynamicPalette?: ExtractedPalette | null;
+  isShuffle?: boolean;
+  repeatMode?: 'off' | 'all' | 'one';
+  onToggleShuffle?: () => void;
+  onToggleRepeat?: () => void;
 }
 
 export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
@@ -45,9 +94,20 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
   duration,
   mode,
   onModeChange,
+  theme,
+  customThemePalette,
+  dynamicPalette,
+  isShuffle = false,
+  repeatMode = 'off',
+  onToggleShuffle,
+  onToggleRepeat,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lyricsContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const themeColors = useMemo(() => {
+    return getVisualizerThemeRGB(theme, customThemePalette, dynamicPalette);
+  }, [theme, customThemePalette, dynamicPalette]);
 
   // Lyrics State
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null);
@@ -122,7 +182,7 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
 
   // Render Visualizer Canvas
   useEffect(() => {
-    if (mode === 'lyrics_synced') return;
+    if (mode === 'lyrics_synced' || mode === 'none') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -132,14 +192,9 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
     let globeAngle = 0;
     const peakBars: number[] = new Array(32).fill(0);
 
-    // Starfield Warp particles
-    const starCount = 180;
-    const stars = Array.from({ length: starCount }, () => ({
-      x: (Math.random() - 0.5) * 2000,
-      y: (Math.random() - 0.5) * 2000,
-      z: Math.random() * 1000 + 10,
-      pz: 1000,
-    }));
+    const [pr, pg, pb] = themeColors.primary;
+    const [sr, sg, sb] = themeColors.secondary;
+    const [ar, ag, ab] = themeColors.accent;
 
     let radarRings: { radius: number; alpha: number }[] = [];
 
@@ -158,47 +213,7 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
       }
       bassEnergy = bassEnergy / 16 / 255;
 
-      if (mode === 'starfield_warp') {
-        // PS3 Cosmic Hyperspace Starfield Warp
-        const cx = width / 2;
-        const cy = height / 2;
-        const speed = 8 + bassEnergy * 32;
-
-        ctx.fillStyle = '#ffffff';
-
-        for (let i = 0; i < stars.length; i++) {
-          const s = stars[i];
-          s.pz = s.z;
-          s.z -= speed;
-
-          if (s.z <= 0) {
-            s.z = 1000;
-            s.pz = 1000;
-            s.x = (Math.random() - 0.5) * 2000;
-            s.y = (Math.random() - 0.5) * 2000;
-          }
-
-          const k = 400 / s.z;
-          const px = s.x * k + cx;
-          const py = s.y * k + cy;
-
-          const pk = 400 / s.pz;
-          const prevX = s.x * pk + cx;
-          const prevY = s.y * pk + cy;
-
-          if (px >= 0 && px <= width && py >= 0 && py <= height) {
-            const size = Math.max(1, (1 - s.z / 1000) * 3);
-            const alpha = (1 - s.z / 1000) * 0.9;
-
-            ctx.beginPath();
-            ctx.moveTo(prevX, prevY);
-            ctx.lineTo(px, py);
-            ctx.strokeStyle = `rgba(224, 242, 254, ${alpha})`;
-            ctx.lineWidth = size;
-            ctx.stroke();
-          }
-        }
-      } else if (mode === 'sonic_radar') {
+      if (mode === 'sonic_radar') {
         // Sonic Bloom Radar
         const cx = width / 2;
         const cy = height / 2;
@@ -214,7 +229,7 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
 
           ctx.beginPath();
           ctx.arc(cx, cy, ring.radius, 0, Math.PI * 2);
-          ctx.strokeStyle = `rgba(56, 189, 248, ${ring.alpha})`;
+          ctx.strokeStyle = `rgba(${pr}, ${pg}, ${pb}, ${ring.alpha})`;
           ctx.lineWidth = 2;
           ctx.stroke();
         });
@@ -237,7 +252,7 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
           ctx.beginPath();
           ctx.moveTo(x1, y1);
           ctx.lineTo(x2, y2);
-          ctx.strokeStyle = `rgba(255, 255, 255, ${0.3 + val * 0.7})`;
+          ctx.strokeStyle = `rgba(${ar}, ${ag}, ${ab}, ${0.35 + val * 0.65})`;
           ctx.lineWidth = 2;
           ctx.stroke();
         }
@@ -257,8 +272,8 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
           centerY,
           radius * 1.5
         );
-        glowGrad.addColorStop(0, 'rgba(56, 189, 248, 0.12)');
-        glowGrad.addColorStop(0.5, 'rgba(30, 58, 138, 0.08)');
+        glowGrad.addColorStop(0, `rgba(${pr}, ${pg}, ${pb}, 0.22)`);
+        glowGrad.addColorStop(0.5, `rgba(${sr}, ${sg}, ${sb}, 0.10)`);
         glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
         ctx.fillStyle = glowGrad;
         ctx.beginPath();
@@ -266,7 +281,7 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
         ctx.fill();
 
         // Latitude lines
-        ctx.strokeStyle = 'rgba(125, 211, 252, 0.25)';
+        ctx.strokeStyle = `rgba(${pr}, ${pg}, ${pb}, 0.35)`;
         ctx.lineWidth = 1.2;
 
         for (let lat = -60; lat <= 60; lat += 20) {
@@ -286,7 +301,7 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
 
           ctx.beginPath();
           ctx.ellipse(centerX, centerY, Math.abs(rLon), radius, 0, 0, Math.PI * 2);
-          ctx.strokeStyle = `rgba(186, 230, 253, ${0.15 + Math.abs(Math.sin(rad)) * 0.25})`;
+          ctx.strokeStyle = `rgba(${ar}, ${ag}, ${ab}, ${0.15 + Math.abs(Math.sin(rad)) * 0.35})`;
           ctx.stroke();
         }
 
@@ -305,7 +320,7 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
           ctx.beginPath();
           ctx.moveTo(x1, y1);
           ctx.lineTo(x2, y2);
-          ctx.strokeStyle = `rgba(224, 242, 254, ${0.3 + val * 0.7})`;
+          ctx.strokeStyle = `rgba(${ar}, ${ag}, ${ab}, ${0.3 + val * 0.7})`;
           ctx.lineWidth = 1.8;
           ctx.stroke();
         }
@@ -334,15 +349,15 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
 
           // Bar gradient
           const grad = ctx.createLinearGradient(0, baseY, 0, y);
-          grad.addColorStop(0, 'rgba(56, 189, 248, 0.4)');
-          grad.addColorStop(0.7, 'rgba(125, 211, 252, 0.85)');
-          grad.addColorStop(1, 'rgba(255, 255, 255, 0.95)');
+          grad.addColorStop(0, `rgba(${sr}, ${sg}, ${sb}, 0.4)`);
+          grad.addColorStop(0.7, `rgba(${pr}, ${pg}, ${pb}, 0.85)`);
+          grad.addColorStop(1, `rgba(${ar}, ${ag}, ${ab}, 0.95)`);
 
           ctx.fillStyle = grad;
           ctx.fillRect(x, y, barWidth, barHeight);
 
           // Peak line
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.fillStyle = `rgba(${ar}, ${ag}, ${ab}, 0.95)`;
           ctx.fillRect(x, baseY - peakBars[i] - 2, barWidth, 2);
         }
       } else {
@@ -362,10 +377,10 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
           x += sliceWidth;
         }
 
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.strokeStyle = `rgba(${ar}, ${ag}, ${ab}, 0.9)`;
         ctx.lineWidth = 2.5;
         ctx.shadowBlur = 12;
-        ctx.shadowColor = '#7dd3fc';
+        ctx.shadowColor = `rgb(${pr}, ${pg}, ${pb})`;
         ctx.stroke();
         ctx.shadowBlur = 0;
       }
@@ -376,7 +391,7 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
     render();
 
     return () => cancelAnimationFrame(animId);
-  }, [mode]);
+  }, [mode, themeColors]);
 
   if (!currentTrack) {
     return (
@@ -395,7 +410,7 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3 z-10">
         <div className="flex items-center gap-2">
           <span className="font-sans text-xs uppercase tracking-wider text-white/70 font-semibold">
-            PS3 Visualizer
+            XMB VISUALIZER
           </span>
           <span aria-hidden="true" className="text-white/30">·</span>
           <span className="text-xs font-mono text-white font-bold drop-shadow-[0_0_6px_rgba(255,255,255,0.7)]">
@@ -408,9 +423,9 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
           {[
             { id: 'wave' as VisualizerMode, name: 'Silk Wave', icon: Waves },
             { id: 'earth_cosmos' as VisualizerMode, name: 'Earth Cosmos', icon: Globe },
-            { id: 'starfield_warp' as VisualizerMode, name: 'Starfield Warp', icon: Sparkles },
             { id: 'sonic_radar' as VisualizerMode, name: 'Sonic Radar', icon: Radio },
             { id: 'vu_spectrum' as VisualizerMode, name: 'VU Spectrum', icon: Activity },
+            { id: 'none' as VisualizerMode, name: 'No Visualizer', icon: Disc },
             { id: 'lyrics_synced' as VisualizerMode, name: 'Synced Lyrics', icon: FileText },
           ].map((m) => {
             const Icon = m.icon;
@@ -436,9 +451,38 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
         </div>
       </div>
 
-      {/* Main Center Stage: Either Canvas Visualizer or Synced Lyrics Display */}
+      {/* Main Center Stage: Either Canvas Visualizer, Center Album Artwork, or Synced Lyrics Display */}
       <div className="relative flex-1 flex items-center justify-center my-2 min-h-[280px]">
-        {mode === 'lyrics_synced' ? (
+        {mode === 'none' ? (
+          // No Visualizer: Prominent Centered Enlarged Album Artwork
+          <div className="relative z-10 flex flex-col items-center justify-center p-2 animate-in fade-in zoom-in-95 duration-300">
+            <div className="relative group w-64 h-64 sm:w-80 sm:h-80 md:w-[360px] md:h-[360px] rounded-2xl overflow-hidden border border-white/25 shadow-[0_0_60px_rgba(0,0,0,0.95)] transition-all duration-300 hover:scale-102">
+              <img
+                src={currentTrack.coverUrl}
+                alt={currentTrack.title}
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80';
+                }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-5">
+                <h3 className="text-xl sm:text-2xl font-bold text-white tracking-wide truncate drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">
+                  {currentTrack.title}
+                </h3>
+                <p className="text-sm font-semibold text-white/80 truncate mt-0.5">
+                  {currentTrack.artist} — {currentTrack.album}
+                </p>
+                <div className="flex items-center gap-2 mt-2 text-xs font-mono text-white/70">
+                  <span className="px-2 py-0.5 rounded bg-white/20 text-white font-semibold">
+                    {currentTrack.format} · {currentTrack.sampleRate ? `${currentTrack.sampleRate / 1000}kHz` : '48kHz'}
+                  </span>
+                  <span>{currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : 'FLAC Master'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : mode === 'lyrics_synced' ? (
           // Synced Karaoke Lyrics Display
           <div className="relative w-full h-[320px] flex flex-col items-center justify-between p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10">
             <div className="flex items-center justify-between w-full pb-2 border-b border-white/10 text-xs font-mono text-white/50">
@@ -493,51 +537,58 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
             </div>
           </div>
         ) : (
-          // Canvas Visualizers (Earth, Warp, Wave, Radar, Spectrum)
+          // Canvas Visualizers (Earth, Wave, Radar, Spectrum)
           <>
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
-            <div className="relative z-10 flex flex-col items-center pointer-events-auto">
-              <div className="relative group w-44 h-44 rounded-lg overflow-hidden border border-white/20 shadow-[0_0_35px_rgba(0,0,0,0.85)] transition-transform duration-300 hover:scale-105">
-                <img
-                  src={currentTrack.coverUrl}
-                  alt={currentTrack.title}
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2.5">
-                  <span className="text-[11px] font-mono text-white/90 truncate">
-                    {currentTrack.format} · {currentTrack.sampleRate ? `${currentTrack.sampleRate / 1000}kHz` : '48kHz'}
-                  </span>
-                </div>
-              </div>
-            </div>
           </>
         )}
       </div>
 
-      {/* Track Details & Playback Controls Bar */}
-      <div className="relative z-10 flex flex-col gap-2.5 p-4 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 shadow-2xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="min-w-0">
-            <h2 className="text-lg sm:text-xl font-bold text-white tracking-wide truncate drop-shadow-[0_0_8px_rgba(255,255,255,0.7)]">
-              {currentTrack.title}
-            </h2>
-            <div className="flex items-center gap-2 text-xs text-white/70">
-              <span className="font-semibold text-white/90">{currentTrack.artist}</span>
-              <span aria-hidden="true" className="text-white/30">·</span>
-              <span className="truncate">{currentTrack.album}</span>
+      {/* Track Details, Album Artwork & Playback Controls Bar */}
+      <div className="relative z-10 flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-black/65 backdrop-blur-xl border border-white/15 shadow-[0_10px_40px_rgba(0,0,0,0.8)]">
+        {/* Album Artwork inside Now Playing Panel (Shown when active visualizer mode is active) */}
+        {mode !== 'none' && (
+          <div className="relative group w-20 h-20 sm:w-28 sm:h-28 rounded-xl overflow-hidden border border-white/20 shadow-[0_0_20px_rgba(0,0,0,0.8)] shrink-0 transition-transform hover:scale-105">
+            <img
+              src={currentTrack.coverUrl}
+              alt={currentTrack.title}
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80';
+              }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-1.5">
+              <span className="text-[10px] font-mono text-white/90 truncate">
+                {currentTrack.format} · {currentTrack.sampleRate ? `${currentTrack.sampleRate / 1000}kHz` : '48kHz'}
+              </span>
             </div>
           </div>
+        )}
 
-          <div className="flex items-center gap-2 text-xs font-mono text-white/70 shrink-0">
-            <span className="px-2 py-0.5 rounded bg-white/10 text-white/90 uppercase">
-              {currentTrack.source}
-            </span>
-            <span className="text-white/50">
-              {currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : 'FLAC Master'}
-            </span>
+        {/* Track Details, Progress Bar & Transport Controls */}
+        <div className="flex-1 flex flex-col gap-2 w-full min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-xl font-bold text-white tracking-wide truncate drop-shadow-[0_0_8px_rgba(255,255,255,0.7)]">
+                {currentTrack.title}
+              </h2>
+              <div className="flex items-center gap-2 text-xs text-white/70">
+                <span className="font-semibold text-white/90">{currentTrack.artist}</span>
+                <span aria-hidden="true" className="text-white/30">·</span>
+                <span className="truncate">{currentTrack.album}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs font-mono text-white/70 shrink-0">
+              <span className="px-2 py-0.5 rounded bg-white/10 text-white/90 uppercase">
+                {currentTrack.source}
+              </span>
+              <span className="text-white/50">
+                {currentTrack.bitrate ? `${currentTrack.bitrate} kbps` : 'FLAC Master'}
+              </span>
+            </div>
           </div>
-        </div>
 
         {/* Progress Bar & Seek */}
         <div className="flex items-center gap-3 w-full font-mono text-xs text-white/60">
@@ -559,13 +610,28 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
         </div>
 
         {/* Transport Controls */}
-        <div className="flex items-center justify-center gap-6">
+        <div className="flex items-center justify-center gap-4 sm:gap-6">
+          <button
+            onClick={() => {
+              soundFx.playTick();
+              onToggleShuffle?.();
+            }}
+            className={`p-2 rounded-full transition-all cursor-pointer ${
+              isShuffle
+                ? 'text-sky-400 bg-sky-400/20 border border-sky-400/40 shadow-[0_0_12px_rgba(56,189,248,0.5)]'
+                : 'text-white/60 hover:text-white hover:bg-white/10'
+            }`}
+            title={`Shuffle Mode: ${isShuffle ? 'On' : 'Off'}`}
+          >
+            <Shuffle className="w-5 h-5" />
+          </button>
+
           <button
             onClick={() => {
               soundFx.playTick();
               onPrev();
             }}
-            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors cursor-pointer"
             title="Previous Track (L1 / [)"
           >
             <SkipBack className="w-5 h-5" />
@@ -576,7 +642,7 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
               soundFx.playSelect();
               onTogglePlay();
             }}
-            className="p-3 bg-white text-black hover:bg-white/90 rounded-full shadow-[0_0_16px_rgba(255,255,255,0.6)] transition-transform active:scale-95"
+            className="p-3 bg-white text-black hover:bg-white/90 rounded-full shadow-[0_0_16px_rgba(255,255,255,0.6)] transition-transform active:scale-95 cursor-pointer"
             title="Play / Pause (Space / □)"
           >
             {isPlaying ? (
@@ -591,13 +657,33 @@ export const NowPlayingVisualizer: React.FC<NowPlayingVisualizerProps> = ({
               soundFx.playTick();
               onNext();
             }}
-            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors cursor-pointer"
             title="Next Track (R1 / ])"
           >
             <SkipForward className="w-5 h-5" />
           </button>
+
+          <button
+            onClick={() => {
+              soundFx.playTick();
+              onToggleRepeat?.();
+            }}
+            className={`p-2 rounded-full transition-all cursor-pointer ${
+              repeatMode !== 'off'
+                ? 'text-emerald-400 bg-emerald-400/20 border border-emerald-400/40 shadow-[0_0_12px_rgba(52,211,153,0.5)]'
+                : 'text-white/60 hover:text-white hover:bg-white/10'
+            }`}
+            title={`Repeat Mode: ${repeatMode === 'one' ? 'Repeat Track' : repeatMode === 'all' ? 'Repeat All' : 'Off'}`}
+          >
+            {repeatMode === 'one' ? (
+              <Repeat1 className="w-5 h-5" />
+            ) : (
+              <Repeat className="w-5 h-5" />
+            )}
+          </button>
         </div>
       </div>
+    </div>
 
       {/* Manual LRCLIB Lyrics Search Modal */}
       {isSearchLyricsOpen && (

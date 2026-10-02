@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Track } from '../types';
 import { libraryStorage } from '../services/libraryStorage';
-import { UploadCloud, FileAudio, Check, X, HardDrive, FolderSearch, Folder, ArrowRight } from 'lucide-react';
+import { audioMetadataService } from '../services/audioMetadataService';
+import { UploadCloud, FileAudio, Check, X, HardDrive, FolderSearch, Folder, ArrowRight, Music } from 'lucide-react';
 import { soundFx } from '../services/soundFx';
 
 interface LocalImportModalProps {
@@ -36,45 +37,27 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
         continue;
       }
 
-      // Generate local object URL
+      // Generate local object URL for playback
       const audioUrl = URL.createObjectURL(file);
 
-      // Clean title from filename
-      const rawName = file.name.replace(/\.[^/.]+$/, '');
-      const parts = rawName.split(' - ');
-      const artist = parts.length > 1 ? parts[0].trim() : (folderPrefix ? folderPrefix.split('/')[0] : 'Local Artist');
-      const title = parts.length > 1 ? parts.slice(1).join(' - ').trim() : rawName;
-      const album = folderPrefix || 'Local Import Collection';
-
-      // Extract format
-      const ext = file.name.split('.').pop()?.toUpperCase() || 'MP3';
-      const format = (['FLAC', 'MP3', 'OGG', 'WAV', 'AAC'].includes(ext) ? ext : 'MP3') as Track['format'];
-
-      // Estimate or read duration using temporary audio element
-      const duration = await new Promise<number>((resolve) => {
-        const audio = new Audio();
-        audio.src = audioUrl;
-        audio.addEventListener('loadedmetadata', () => {
-          resolve(Math.round(audio.duration) || 180);
-        });
-        audio.addEventListener('error', () => resolve(210));
-      });
+      // Deep parse ID3v2, ID3v1, FLAC Vorbis metadata & embedded cover images
+      const meta = await audioMetadataService.parseFile(file);
 
       const track: Track = {
         id: `local-${Date.now()}-${i}`,
-        title,
-        artist,
-        album,
-        duration,
+        title: meta.title,
+        artist: meta.artist !== 'Unknown Artist' ? meta.artist : (folderPrefix ? folderPrefix.split('/')[0] : 'Local Artist'),
+        album: meta.album !== 'Local Library' ? meta.album : (folderPrefix || 'Local Import Collection'),
+        duration: meta.duration,
         source: 'local',
-        coverUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80',
+        coverUrl: meta.coverUrl,
         audioUrl,
-        genre: 'Local Audio',
-        year: new Date().getFullYear(),
-        format,
-        bitrate: format === 'FLAC' ? 1024 : 320,
-        sampleRate: 48000,
-        bitDepth: format === 'FLAC' ? 24 : 16,
+        genre: meta.genre || 'Local Audio',
+        year: meta.year || new Date().getFullYear(),
+        format: meta.format,
+        bitrate: meta.bitrate,
+        sampleRate: meta.sampleRate,
+        bitDepth: meta.bitDepth,
         isFavorite: false,
         playCount: 0,
         dateAdded: new Date().toISOString().split('T')[0],
@@ -88,7 +71,7 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({
     setImportedTracks((prev) => [...prev, ...newTracks]);
     setIsProcessing(false);
     soundFx.playSelect();
-    setStatusMessage(`Successfully imported ${newTracks.length} audio tracks.`);
+    setStatusMessage(`Successfully imported ${newTracks.length} audio tracks with metadata.`);
   };
 
   // Pull music from pasted directory path

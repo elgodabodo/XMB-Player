@@ -1,5 +1,6 @@
 import React from 'react';
 import { ControllerType } from '../types';
+import { ControllerButtonBadge } from './PS3Icons';
 
 interface PS3ControllerHintsProps {
   canGoBack: boolean;
@@ -7,6 +8,7 @@ interface PS3ControllerHintsProps {
   isPlaying: boolean;
   controllerType?: ControllerType;
   controllerConnected?: boolean;
+  isVisualizerView?: boolean;
 }
 
 export const PS3ControllerHints: React.FC<PS3ControllerHintsProps> = ({
@@ -15,6 +17,7 @@ export const PS3ControllerHints: React.FC<PS3ControllerHintsProps> = ({
   isPlaying,
   controllerType = 'ds4_ds5',
   controllerConnected = false,
+  isVisualizerView = false,
 }) => {
   const isPlayStation = controllerType === 'ds4_ds5';
 
@@ -22,7 +25,34 @@ export const PS3ControllerHints: React.FC<PS3ControllerHintsProps> = ({
     <footer className="fixed bottom-0 left-0 right-0 z-20 flex items-center justify-between px-8 py-3 bg-gradient-to-t from-black/95 via-black/80 to-transparent border-t border-white/5 select-none text-xs text-white/70 font-sans">
       {/* Left side: Navigation Keys & Status */}
       <div className="flex items-center gap-4 text-white/50 text-[11px] font-mono">
-        {controllerConnected ? (
+        {isVisualizerView ? (
+          <>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px] text-white/80">
+                {controllerConnected ? 'D-Pad / Left Stick' : '◄ ► ▲ ▼'}
+              </kbd>
+              <span>Cycle Visualizer</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px] text-white/80">
+                {controllerConnected ? (isPlayStation ? 'L2 / R2' : 'LT / RT') : '[ / ]'}
+              </kbd>
+              <span>Track Skip</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px] text-white/80">
+                {controllerConnected ? (isPlayStation ? '□' : 'X') : 'Space'}
+              </kbd>
+              <span>Play/Pause</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px] text-white/80">
+                {controllerConnected ? (isPlayStation ? '○' : 'B') : 'ESC'}
+              </kbd>
+              <span>Exit Visualizer</span>
+            </span>
+          </>
+        ) : controllerConnected ? (
           <>
             <span className="flex items-center gap-1.5">
               <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px] text-white/80">
@@ -83,55 +113,27 @@ export const PS3ControllerHints: React.FC<PS3ControllerHintsProps> = ({
         <div className="flex items-center gap-5 text-white/90 font-medium animate-in fade-in duration-200">
           {/* Play / Pause - Square (Pink) on PS, X (Blue) on Xbox */}
           <div className="flex items-center gap-1.5">
-            <span
-              className={`flex items-center justify-center w-5 h-5 rounded-full border text-xs font-bold ${
-                isPlayStation
-                  ? 'border-pink-400 text-pink-400 shadow-[0_0_8px_rgba(244,114,182,0.4)]'
-                  : 'border-blue-400 text-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.4)]'
-              }`}
-            >
-              {isPlayStation ? '□' : 'X'}
-            </span>
+            <ControllerButtonBadge type={isPlayStation ? 'square' : 'x'} />
             <span>{isPlaying ? 'Pause' : 'Play'}</span>
           </div>
 
           {/* Options - Triangle (Green) on PS, Y (Yellow) on Xbox */}
           <div className="flex items-center gap-1.5">
-            <span
-              className={`flex items-center justify-center w-5 h-5 rounded-full border text-xs font-bold ${
-                isPlayStation
-                  ? 'border-emerald-400 text-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]'
-                  : 'border-amber-400 text-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)]'
-              }`}
-            >
-              {isPlayStation ? '△' : 'Y'}
-            </span>
+            <ControllerButtonBadge type={isPlayStation ? 'triangle' : 'y'} />
             <span>Options</span>
           </div>
 
           {/* Back / Cancel - Circle (Red) on PS, B (Red) on Xbox */}
           {canGoBack && (
             <div className="flex items-center gap-1.5">
-              <span
-                className={`flex items-center justify-center w-5 h-5 rounded-full border text-xs font-bold border-rose-500 text-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]`}
-              >
-                {isPlayStation ? '○' : 'B'}
-              </span>
+              <ControllerButtonBadge type={isPlayStation ? 'circle' : 'b'} />
               <span>Back</span>
             </div>
           )}
 
           {/* Enter / Select - Cross (Sky) on PS, A (Green) on Xbox */}
           <div className="flex items-center gap-1.5">
-            <span
-              className={`flex items-center justify-center w-5 h-5 rounded-full border text-xs font-bold ${
-                isPlayStation
-                  ? 'border-sky-400 text-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.4)]'
-                  : 'border-emerald-400 text-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]'
-              }`}
-            >
-              {isPlayStation ? '✕' : 'A'}
-            </span>
+            <ControllerButtonBadge type={isPlayStation ? 'cross' : 'a'} />
             <span>Select</span>
           </div>
         </div>
