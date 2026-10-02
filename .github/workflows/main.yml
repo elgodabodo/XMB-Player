@@ -62,7 +62,7 @@ jobs:
 
       - name: Package AppImage
         run: |
-          npx electron-builder --linux appimage \
+          npx electron-builder --linux appimage --publish never \
             -c.directories.output=release-out \
             -c.extraMetadata.main=main.js \
             -c.extraMetadata.name="xmbplayer" \
