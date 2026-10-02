@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch: # Allows manual trigger button in Actions tab
 
 jobs:
   build-and-release:
@@ -22,14 +23,12 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        # Using install instead of ci since there is no lockfile in the repo yet
         run: npm install 
 
       - name: Build the project
         run: npm run build
 
       - name: Archive build artifacts
-        # Zips only the compiled frontend assets from Vite
         run: cd dist && zip -r ../release-build.zip .
 
       - name: Publish to GitHub Releases
