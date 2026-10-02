@@ -40,6 +40,12 @@ class VideoService {
     return video;
   }
 
+  public addVideos(newVideos: VideoItem[]) {
+    if (!newVideos.length) return;
+    this.videos = [...newVideos.reverse(), ...this.videos];
+    this.saveVideos();
+  }
+
   public removeVideo(id: string) {
     this.videos = this.videos.filter((v) => v.id !== id);
     this.saveVideos();

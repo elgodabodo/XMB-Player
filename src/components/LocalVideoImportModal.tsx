@@ -7,13 +7,13 @@ import { Film, Upload, Plus, X, CheckCircle2, AlertCircle, HardDrive } from 'luc
 interface LocalVideoImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onVideoImported: (video: VideoItem) => void;
+  onVideosImported: (videos: VideoItem[]) => void;
 }
 
 export const LocalVideoImportModal: React.FC<LocalVideoImportModalProps> = ({
   isOpen,
   onClose,
-  onVideoImported,
+  onVideosImported,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -33,48 +33,66 @@ export const LocalVideoImportModal: React.FC<LocalVideoImportModalProps> = ({
 
     setIsProcessing(true);
     setErrorMsg(null);
+    soundFx.playTick(); // Single sound effect at start
+
+    const newVideos: VideoItem[] = [];
 
     try {
       for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mkv|mov|avi|ogg|m4v|flv|ts)$/i)) {
-          continue;
+        try {
+          const file = files[i];
+          if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mkv|mov|avi|ogg|m4v|flv|ts)$/i)) {
+            continue;
+          }
+
+          if (i % 4 === 0 || i === files.length - 1) {
+            await new Promise((r) => setTimeout(r, 0));
+          }
+
+          const videoBlobUrl = URL.createObjectURL(file);
+          const { thumbnailUrl, duration, resolution } = await videoService.generateThumbnail(file);
+
+          const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+          const ext = file.name.split('.').pop()?.toUpperCase() || 'MP4';
+
+          const formatBytes = (bytes: number) => {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const idx = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, idx)).toFixed(1)) + ' ' + sizes[idx];
+          };
+
+          const newVideo: VideoItem = {
+            id: `vid-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+            title: cleanTitle,
+            videoUrl: videoBlobUrl,
+            thumbnailUrl: thumbnailUrl || 'https://images.unsplash.com/photo-1536240478700-b869070f9279?w=500&q=80',
+            duration,
+            format: ext,
+            resolution: resolution || '1080p',
+            fileSize: formatBytes(file.size),
+            dateAdded: new Date().toISOString().split('T')[0],
+          };
+
+          newVideos.push(newVideo);
+        } catch (err) {
+          console.warn('Skipping unparsable video file:', err);
         }
-
-        const videoBlobUrl = URL.createObjectURL(file);
-        const { thumbnailUrl, duration, resolution } = await videoService.generateThumbnail(file);
-
-        const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-        const ext = file.name.split('.').pop()?.toUpperCase() || 'MP4';
-
-        const formatBytes = (bytes: number) => {
-          if (bytes === 0) return '0 B';
-          const k = 1024;
-          const sizes = ['B', 'KB', 'MB', 'GB'];
-          const idx = Math.floor(Math.log(bytes) / Math.log(k));
-          return parseFloat((bytes / Math.pow(k, idx)).toFixed(1)) + ' ' + sizes[idx];
-        };
-
-        const newVideo: VideoItem = {
-          id: `vid-${Date.now()}-${i}`,
-          title: cleanTitle,
-          videoUrl: videoBlobUrl,
-          thumbnailUrl: thumbnailUrl || 'https://images.unsplash.com/photo-1536240478700-b869070f9279?w=500&q=80',
-          duration,
-          format: ext,
-          resolution: resolution || '1080p',
-          fileSize: formatBytes(file.size),
-          dateAdded: new Date().toISOString().split('T')[0],
-        };
-
-        videoService.addVideo(newVideo);
-        onVideoImported(newVideo);
       }
 
-      soundFx.playSettingChanged();
+      if (newVideos.length > 0) {
+        videoService.addVideos(newVideos);
+        soundFx.playSelect(); // Single sound effect at end
+        onVideosImported(newVideos);
+      } else {
+        soundFx.playCancel();
+        setErrorMsg('No valid video files found in selection.');
+      }
+
       onClose();
     } catch (err) {
-      setErrorMsg('Failed to process video file. Please ensure it is a valid video.');
+      setErrorMsg('Failed to process video files. Please ensure they are valid formats.');
     } finally {
       setIsProcessing(false);
     }
@@ -89,6 +107,7 @@ export const LocalVideoImportModal: React.FC<LocalVideoImportModalProps> = ({
 
     setIsProcessing(true);
     setErrorMsg(null);
+    soundFx.playTick();
 
     try {
       const { thumbnailUrl, duration, resolution } = await videoService.generateThumbnail(manualUrl.trim());
@@ -109,10 +128,11 @@ export const LocalVideoImportModal: React.FC<LocalVideoImportModalProps> = ({
       };
 
       videoService.addVideo(newVideo);
-      soundFx.playSettingChanged();
-      onVideoImported(newVideo);
+      soundFx.playSelect();
+      onVideosImported([newVideo]);
       onClose();
     } catch {
+      soundFx.playCancel();
       setErrorMsg('Could not load the specified video URL or file path.');
     } finally {
       setIsProcessing(false);

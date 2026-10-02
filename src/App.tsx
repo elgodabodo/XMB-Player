@@ -2058,10 +2058,13 @@ export default function App() {
       <LocalVideoImportModal
         isOpen={isImportVideoModalOpen}
         onClose={() => setIsImportVideoModalOpen(false)}
-        onVideoImported={(video) => {
+        onVideosImported={(importedVideos) => {
           refreshLibrary();
-          setPlayingVideo(video);
-          showSettingFeedback('Video Imported', `Imported "${video.title}" to collection`, 'check');
+          showSettingFeedback(
+            'Videos Imported',
+            `Added ${importedVideos.length} ${importedVideos.length === 1 ? 'video' : 'videos'} to collection`,
+            'check'
+          );
         }}
       />
 
