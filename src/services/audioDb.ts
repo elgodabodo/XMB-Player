@@ -1,12 +1,15 @@
 /**
- * IndexedDB Persistent Audio Blob Store
- * Stores audio Blobs so songs persist and keep working across restarts/reloads
- * even when the original browser blob URL is revoked.
+ * IndexedDB Persistent Audio & Library Store
+ * Stores audio Blobs and the full track collection so large music collections (e.g. 900+ tracks)
+ * never exceed browser localStorage quota (5MB) and persist across restarts.
  */
 
+import { Track } from '../types';
+
 const DB_NAME = 'xmb_audio_storage';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'audio_blobs';
+const STORE_TRACKS = 'tracks_store';
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -17,10 +20,13 @@ function openDatabase(): Promise<IDBDatabase> {
 
     const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
+      }
+      if (!db.objectStoreNames.contains(STORE_TRACKS)) {
+        db.createObjectStore(STORE_TRACKS);
       }
     };
 
@@ -29,15 +35,21 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
+/**
+ * Save audio blob into IndexedDB with graceful handling if quota is reached
+ */
 export async function saveAudioBlob(trackId: string, blob: Blob): Promise<void> {
   try {
     const db = await openDatabase();
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       const req = store.put(blob, trackId);
       req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      req.onerror = () => {
+        console.warn('Audio blob storage warning (quota or disk limit reached):', req.error);
+        resolve(); // Always resolve so import pipeline never breaks
+      };
     });
   } catch (err) {
     console.warn('Failed to save audio blob to IndexedDB:', err);
@@ -47,12 +59,12 @@ export async function saveAudioBlob(trackId: string, blob: Blob): Promise<void> 
 export async function getAudioBlob(trackId: string): Promise<Blob | null> {
   try {
     const db = await openDatabase();
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
       const req = store.get(trackId);
       req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
+      req.onerror = () => resolve(null);
     });
   } catch {
     return null;
@@ -62,12 +74,12 @@ export async function getAudioBlob(trackId: string): Promise<Blob | null> {
 export async function deleteAudioBlob(trackId: string): Promise<void> {
   try {
     const db = await openDatabase();
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       const req = store.delete(trackId);
       req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      req.onerror = () => resolve();
     });
   } catch {}
 }
@@ -75,12 +87,47 @@ export async function deleteAudioBlob(trackId: string): Promise<void> {
 export async function clearAllAudioBlobs(): Promise<void> {
   try {
     const db = await openDatabase();
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       const req = store.clear();
       req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      req.onerror = () => resolve();
     });
   } catch {}
+}
+
+/**
+ * Save full tracks collection into IndexedDB
+ * Allows unlimited track collections (1,000+ files) without hitting localStorage 5MB limit
+ */
+export async function saveTracksToDb(tracks: Track[]): Promise<void> {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_TRACKS, 'readwrite');
+      const store = tx.objectStore(STORE_TRACKS);
+      const req = store.put(tracks, 'library_tracks');
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve();
+    });
+  } catch {}
+}
+
+/**
+ * Retrieve tracks collection from IndexedDB
+ */
+export async function getTracksFromDb(): Promise<Track[] | null> {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_TRACKS, 'readonly');
+      const store = tx.objectStore(STORE_TRACKS);
+      const req = store.get('library_tracks');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
 }

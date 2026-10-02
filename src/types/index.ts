@@ -78,6 +78,10 @@ export interface PictureItem {
   album?: string;
   artist?: string;
   year?: number;
+  folder?: string;
+  dateAdded?: string;
+  filePath?: string;
+  isCustom?: boolean;
 }
 
 export interface VideoItem {

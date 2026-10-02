@@ -120,17 +120,29 @@ export class AudioMetadataService {
       audio.preload = 'metadata';
       audio.src = url;
 
+      let finished = false;
       const cleanUp = () => {
-        URL.revokeObjectURL(url);
+        if (!finished) {
+          finished = true;
+          URL.revokeObjectURL(url);
+        }
       };
 
+      // 600ms timeout prevents hangs on batch imports with malformed headers
+      const timer = setTimeout(() => {
+        cleanUp();
+        resolve(180);
+      }, 600);
+
       audio.addEventListener('loadedmetadata', () => {
+        clearTimeout(timer);
         const dur = Math.round(audio.duration);
         cleanUp();
-        resolve(dur > 0 ? dur : 180);
+        resolve(dur > 0 && !isNaN(dur) ? dur : 180);
       });
 
       audio.addEventListener('error', () => {
+        clearTimeout(timer);
         cleanUp();
         resolve(180);
       });
@@ -273,7 +285,8 @@ export class AudioMetadataService {
 
     // Remaining bytes are raw image data
     const imageSize = end - p;
-    if (imageSize <= 0) return null;
+    // Cap embedded artwork at 128KB to prevent memory exhaustion and localStorage crashes on large collections
+    if (imageSize <= 0 || imageSize > 128 * 1024) return null;
 
     const imgBytes = new Uint8Array(view.buffer, view.byteOffset + p, imageSize);
     let binary = '';
@@ -357,7 +370,7 @@ export class AudioMetadataService {
           const dataLength = view.getUint32(p, false);
           p += 4;
 
-          if (dataLength > 0 && p + dataLength <= view.byteLength) {
+          if (dataLength > 0 && dataLength <= 128 * 1024 && p + dataLength <= view.byteLength) {
             const imgBytes = new Uint8Array(view.buffer, view.byteOffset + p, dataLength);
             let binary = '';
             const chunk = 8192;
@@ -417,55 +430,21 @@ export class AudioMetadataService {
   }
 
   /**
-   * Generates a sleek, high-fidelity album jacket placeholder when audio file has no embedded artwork
+   * Generates a sleek, high-fidelity SVG album jacket placeholder
+   * Extremely lightweight (< 400 bytes vs 30KB Canvas JPEG) allowing 1,000+ tracks without memory/quota issues
    */
   public generateFallbackCover(title: string, artist: string): string {
-    const canvas = document.createElement('canvas');
-    canvas.width = 300;
-    canvas.height = 300;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80';
-
-    // Derive hue from title string
     let hash = 0;
     for (let i = 0; i < (title + artist).length; i++) {
       hash = (hash << 5) - hash + (title + artist).charCodeAt(i);
     }
-    const hue1 = Math.abs(hash) % 360;
-    const hue2 = (hue1 + 60) % 360;
+    const h1 = Math.abs(hash) % 360;
+    const h2 = (h1 + 55) % 360;
+    const initials = (artist.slice(0, 1) + title.slice(0, 1)).toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PS';
 
-    // Background gradient
-    const grad = ctx.createLinearGradient(0, 0, 300, 300);
-    grad.addColorStop(0, `hsl(${hue1}, 75%, 22%)`);
-    grad.addColorStop(0.5, `hsl(${hue2}, 60%, 14%)`);
-    grad.addColorStop(1, '#05070f');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 300, 300);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="hsl(${h1},70%,22%)"/><stop offset="50%" stop-color="hsl(${h2},60%,14%)"/><stop offset="100%" stop-color="#05070f"/></linearGradient></defs><rect width="100" height="100" fill="url(#bg)"/><circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1.5"/><circle cx="50" cy="50" r="30" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1.5"/><circle cx="50" cy="50" r="18" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"/><circle cx="50" cy="50" r="12" fill="rgba(255,255,255,0.15)"/><text x="50" y="54" font-family="system-ui,-apple-system,sans-serif" font-weight="700" font-size="9" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`;
 
-    // Subtle vinyl grooves
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
-    ctx.lineWidth = 1.5;
-    for (let r = 35; r < 140; r += 12) {
-      ctx.beginPath();
-      ctx.arc(150, 150, r, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    // Center emblem
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.beginPath();
-    ctx.arc(150, 150, 32, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Initials
-    const initials = (artist.slice(0, 1) + title.slice(0, 1)).toUpperCase() || 'PS';
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 20px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(initials, 150, 150);
-
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }
 }
 

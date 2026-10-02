@@ -30,6 +30,7 @@ import { colorExtractor } from './services/colorExtractor';
 import { openMediaFile } from './services/nativeBridge';
 import { gameService } from './services/gameService';
 import { videoService } from './services/videoService';
+import { pictureService } from './services/pictureService';
 import sackboyAvatar from './assets/images/sackboy_avatar_1790922791643.jpg';
 import {
   libraryStorage,
@@ -46,6 +47,7 @@ import { NowPlayingVisualizer } from './components/NowPlayingVisualizer';
 import { PS3ControllerHints } from './components/PS3ControllerHints';
 import { GStreamerInspectorModal } from './components/GStreamerInspectorModal';
 import { LocalImportModal } from './components/LocalImportModal';
+import { LocalPictureImportModal } from './components/LocalPictureImportModal';
 import { LocalVideoImportModal } from './components/LocalVideoImportModal';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
 import { VideoContextMenu } from './components/VideoContextMenu';
@@ -163,6 +165,11 @@ export default function App() {
   const [contextTrack, setContextTrack] = useState<Track | null>(null);
   const [contextMenuIndex, setContextMenuIndex] = useState(0);
 
+  // Picture State
+  const [customPictures, setCustomPictures] = useState<PictureItem[]>(() => pictureService.getPictures());
+  const [isImportPictureModalOpen, setIsImportPictureModalOpen] = useState(false);
+  const [activePhotoList, setActivePhotoList] = useState<PictureItem[]>([]);
+
   // Video State
   const [videos, setVideos] = useState<VideoItem[]>(videoService.getVideos());
   const [isImportVideoModalOpen, setIsImportVideoModalOpen] = useState(false);
@@ -210,12 +217,33 @@ export default function App() {
     setPlaylists(libraryStorage.getPlaylists());
     setGames(gameService.getGames());
     setVideos(videoService.getVideos());
+    setCustomPictures(pictureService.getPictures());
   }, []);
 
   const handleDeleteVideo = useCallback((videoId: string) => {
     videoService.removeVideo(videoId);
     refreshLibrary();
     showSettingFeedback('Video Deleted', 'Removed video from local collection', 'check');
+  }, [refreshLibrary, showSettingFeedback]);
+
+  const handleDeletePicture = useCallback(
+    (picture: PictureItem) => {
+      pictureService.removePicture(picture.id);
+      refreshLibrary();
+      showSettingFeedback('Picture Deleted', `Removed "${picture.title}" from custom pictures`, 'check');
+    },
+    [refreshLibrary, showSettingFeedback]
+  );
+
+  const handleRemoveAllAlbumArtwork = useCallback(() => {
+    soundFx.playCancel();
+    const removedCount = libraryStorage.removeAllAlbumArtworks();
+    refreshLibrary();
+    showSettingFeedback(
+      'Album Artwork Removed',
+      removedCount > 0 ? `Cleared artwork from ${removedCount} tracks` : 'All album artworks cleared',
+      'check'
+    );
   }, [refreshLibrary, showSettingFeedback]);
 
   const handleSaveProfile = useCallback(
@@ -229,18 +257,22 @@ export default function App() {
     [showSettingFeedback]
   );
 
-  // Gallery Pictures list
+  // Gallery Pictures list (album artworks from songs)
   const galleryPictures: PictureItem[] = useMemo(() => {
-    return libraryStorage.getAlbums().map((alb) => ({
-      id: `pic-${alb.id}`,
-      title: alb.title,
-      subtitle: `${alb.artist} · ${alb.year}`,
-      url: alb.coverUrl,
-      album: alb.title,
-      artist: alb.artist,
-      year: alb.year,
-    }));
-  }, []);
+    return libraryStorage
+      .getAlbums()
+      .filter((alb) => Boolean(alb.coverUrl))
+      .map((alb) => ({
+        id: `pic-${alb.id}`,
+        title: alb.title,
+        subtitle: `${alb.artist} · ${alb.year}`,
+        url: alb.coverUrl,
+        album: alb.title,
+        artist: alb.artist,
+        year: alb.year,
+        isCustom: false,
+      }));
+  }, [tracks]);
 
   // Picture Actions
   const handleSetAsAvatar = useCallback(
@@ -504,6 +536,16 @@ export default function App() {
     // If inside a subfolder: dynamically generate its items based on live state!
     if (currentSubFolder) {
       if (currentSubFolder === 'art_gallery') {
+        if (galleryPictures.length === 0) {
+          return [
+            {
+              id: 'art-empty',
+              title: 'No Album Artwork Found',
+              subtitle: 'Album artwork has been cleared or none is available in library',
+              bulletType: 'palette',
+            },
+          ];
+        }
         return galleryPictures.map((pic, idx) => ({
           id: pic.id,
           title: pic.title,
@@ -511,7 +553,36 @@ export default function App() {
           coverUrl: pic.url,
           bulletType: 'palette',
           picture: pic,
-          action: () => setViewingPictureIndex(idx),
+          action: () => {
+            setActivePhotoList(galleryPictures);
+            setViewingPictureIndex(idx);
+          },
+        }));
+      }
+
+      if (currentSubFolder === 'custom_pictures') {
+        if (customPictures.length === 0) {
+          return [
+            {
+              id: 'pht-empty',
+              title: 'Custom Pictures Folder Empty',
+              subtitle: 'Click "Import Custom Pictures" to add images',
+              bulletType: 'plus',
+              action: () => setIsImportPictureModalOpen(true),
+            },
+          ];
+        }
+        return customPictures.map((pic, idx) => ({
+          id: pic.id,
+          title: pic.title,
+          subtitle: `${pic.folder || 'Imported Photos'} · Press △ for Options`,
+          coverUrl: pic.url,
+          bulletType: 'palette',
+          picture: pic,
+          action: () => {
+            setActivePhotoList(customPictures);
+            setViewingPictureIndex(idx);
+          },
         }));
       }
 
@@ -893,21 +964,59 @@ export default function App() {
       case 'photo':
         return [
           {
+            id: 'pht-remove-all-art',
+            title: 'Remove All Album Artwork',
+            subtitle:
+              galleryPictures.length > 0
+                ? `Remove artwork from all ${galleryPictures.length} albums`
+                : 'No album artwork in library',
+            badge: galleryPictures.length > 0 ? `${galleryPictures.length} ALBUMS` : 'EMPTY',
+            bulletType: 'wrench',
+            action: () => {
+              if (galleryPictures.length === 0) {
+                soundFx.playTick();
+                showSettingFeedback('Album Art', 'No album artwork in library', 'palette');
+                return;
+              }
+              handleRemoveAllAlbumArtwork();
+            },
+          },
+          {
+            id: 'pht-import-pics',
+            title: 'Import Custom Pictures',
+            subtitle: 'Import personal photos, wallpapers, or images into a folder',
+            bulletType: 'plus',
+            action: () => setIsImportPictureModalOpen(true),
+          },
+          {
             id: 'pht-gallery',
             title: 'Album Artworks Gallery',
-            subtitle: `${galleryPictures.length} pictures · Click to view fullscreen · △ for options`,
+            subtitle: `${galleryPictures.length} album covers · Click to open folder`,
+            badge: galleryPictures.length > 0 ? `${galleryPictures.length} COVERS` : undefined,
             bulletType: 'palette',
             isFolder: true,
             folderType: 'art_gallery',
           },
-          ...galleryPictures.map((pic, idx) => ({
+          {
+            id: 'pht-custom-folder',
+            title: 'Custom Pictures',
+            subtitle: `${customPictures.length} pictures in collection · Click to open folder`,
+            badge: customPictures.length > 0 ? `${customPictures.length} PHOTOS` : undefined,
+            bulletType: 'folder',
+            isFolder: true,
+            folderType: 'custom_pictures',
+          },
+          ...customPictures.map((pic, idx) => ({
             id: pic.id,
             title: pic.title,
-            subtitle: `${pic.artist} · ${pic.year} · Press △ for Options`,
+            subtitle: `${pic.folder || 'Imported Photo'} · Press △ for Options`,
             coverUrl: pic.url,
             bulletType: 'palette' as const,
             picture: pic,
-            action: () => setViewingPictureIndex(idx),
+            action: () => {
+              setActivePhotoList(customPictures);
+              setViewingPictureIndex(idx);
+            },
           })),
         ];
 
@@ -1892,10 +2001,13 @@ export default function App() {
       <LocalImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
-        onTrackImported={(track) => {
+        onTracksImported={(importedTracks) => {
           refreshLibrary();
-          handlePlayTrack(track);
-          showSettingFeedback('Music Imported', `Imported "${track.title}" to collection`, 'check');
+          showSettingFeedback(
+            'Music Imported',
+            `Added ${importedTracks.length} ${importedTracks.length === 1 ? 'track' : 'tracks'} to library`,
+            'music'
+          );
         }}
       />
 

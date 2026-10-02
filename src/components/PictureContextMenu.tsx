@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ControllerType, PictureItem } from '../types';
 import { soundFx } from '../services/soundFx';
-import { Maximize2, User, Palette, X } from 'lucide-react';
+import { Maximize2, User, Palette, X, Trash2 } from 'lucide-react';
 import { ControllerButtonBadge } from './PS3Icons';
 
 interface PictureContextMenuProps {
@@ -11,6 +11,7 @@ interface PictureContextMenuProps {
   onViewFullscreen: (picture: PictureItem) => void;
   onSetAsAvatar: (picture: PictureItem) => void;
   onExtractColorway: (picture: PictureItem) => void;
+  onDeletePicture?: (picture: PictureItem) => void;
   selectedIndex?: number;
   onSelectedIndexChange?: (index: number) => void;
   controllerType?: ControllerType;
@@ -24,6 +25,7 @@ export const PictureContextMenu: React.FC<PictureContextMenuProps> = ({
   onViewFullscreen,
   onSetAsAvatar,
   onExtractColorway,
+  onDeletePicture,
   selectedIndex,
   onSelectedIndexChange,
   controllerType = 'ds4_ds5',
@@ -69,6 +71,20 @@ export const PictureContextMenu: React.FC<PictureContextMenuProps> = ({
         onClose();
       },
     },
+    ...(onDeletePicture && picture?.isCustom
+      ? [
+          {
+            id: 'delete',
+            label: 'Delete Picture',
+            icon: <Trash2 className="w-4 h-4 text-rose-400" />,
+            execute: () => {
+              soundFx.playCancel();
+              if (picture) onDeletePicture(picture);
+              onClose();
+            },
+          },
+        ]
+      : []),
   ];
 
   useEffect(() => {

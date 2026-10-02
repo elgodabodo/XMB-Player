@@ -5,7 +5,7 @@
 
 import { Album, Artist, Playlist, Track } from '../types';
 import { formatFileUrl, readDirectory, readFileAsBlob } from './nativeBridge';
-import { getAudioBlob, saveAudioBlob, deleteAudioBlob, clearAllAudioBlobs } from './audioDb';
+import { getAudioBlob, saveAudioBlob, deleteAudioBlob, clearAllAudioBlobs, saveTracksToDb, getTracksFromDb } from './audioDb';
 
 export const INITIAL_TRACKS: Track[] = [];
 
@@ -16,7 +16,19 @@ class LibraryStorageService {
 
   constructor() {
     this.loadFromStorage();
+    this.loadFromIndexedDbAsync();
     this.restoreAudioBlobsAsync();
+  }
+
+  private async loadFromIndexedDbAsync() {
+    if (typeof window === 'undefined') return;
+    try {
+      const dbTracks = await getTracksFromDb();
+      if (dbTracks && dbTracks.length > this.tracks.length) {
+        this.tracks = dbTracks;
+        await this.restoreAudioBlobsAsync();
+      }
+    } catch {}
   }
 
   private loadFromStorage() {
@@ -132,13 +144,27 @@ class LibraryStorageService {
   }
 
   public addTrack(track: Track) {
-    // If track has a local file path, ensure audioUrl is formatted as file://
-    if (track.filePath) {
-      track.audioUrl = formatFileUrl(track.filePath);
+    this.addTracks([track]);
+  }
+
+  public addTracks(newTracks: Track[]) {
+    if (!newTracks.length) return;
+    const existingIds = new Set(this.tracks.map((t) => t.id));
+    const existingPaths = new Set(this.tracks.map((t) => t.filePath).filter(Boolean));
+
+    const toAdd: Track[] = [];
+    for (const track of newTracks) {
+      if (track.filePath) {
+        track.audioUrl = formatFileUrl(track.filePath);
+      }
+      if (!existingIds.has(track.id) && (!track.filePath || !existingPaths.has(track.filePath))) {
+        toAdd.push(track);
+        existingIds.add(track.id);
+        if (track.filePath) existingPaths.add(track.filePath);
+      }
     }
-    // Prevent duplicate track IDs or filePaths
-    this.tracks = this.tracks.filter((t) => t.id !== track.id && (!track.filePath || t.filePath !== track.filePath));
-    this.tracks.unshift(track);
+
+    this.tracks = [...toAdd, ...this.tracks];
     this.saveTracks();
   }
 
@@ -161,6 +187,24 @@ class LibraryStorageService {
     });
     this.savePlaylists();
     clearAllAudioBlobs();
+  }
+
+  public removeAllAlbumArtworks(): number {
+    let count = 0;
+    this.tracks.forEach((t) => {
+      if (t.coverUrl) {
+        t.coverUrl = '';
+        count++;
+      }
+    });
+    this.playlists.forEach((p) => {
+      if (p.coverUrl && !p.isSystem) {
+        p.coverUrl = '';
+      }
+    });
+    this.saveTracks();
+    this.savePlaylists();
+    return count;
   }
 
   // Music Directories Management
@@ -229,10 +273,10 @@ class LibraryStorageService {
         dateAdded: new Date().toISOString().split('T')[0],
       };
 
-      this.addTrack(track);
       added.push(track);
     }
 
+    this.addTracks(added);
     return added;
   }
 
@@ -356,8 +400,25 @@ class LibraryStorageService {
   }
 
   private saveTracks() {
-    if (typeof window !== 'undefined') {
+    if (typeof window === 'undefined') return;
+
+    // 1. Always save full track collection to IndexedDB (handles 1,000+ tracks without quota limits)
+    saveTracksToDb(this.tracks);
+
+    // 2. Also cache to localStorage with graceful fallback if 5MB quota is exceeded
+    try {
       localStorage.setItem('crossbeat_tracks', JSON.stringify(this.tracks));
+    } catch (e) {
+      console.warn('localStorage quota exceeded for full tracks collection, caching compact tracks:', e);
+      try {
+        const compactTracks = this.tracks.map((t) => ({
+          ...t,
+          coverUrl: t.coverUrl && t.coverUrl.length > 512 ? '' : t.coverUrl,
+        }));
+        localStorage.setItem('crossbeat_tracks', JSON.stringify(compactTracks));
+      } catch (err2) {
+        console.warn('localStorage full, relying on IndexedDB:', err2);
+      }
     }
   }
 
