@@ -36,7 +36,7 @@ jobs:
       - name: Generate Electron wrapper
         run: |
           npm install -D electron electron-builder --legacy-peer-deps
-          cat << 'EOF' > main.js
+          cat << 'EOF' > main.cjs
           const { app, BrowserWindow } = require('electron');
           const path = require('path');
 
@@ -64,10 +64,10 @@ jobs:
         run: |
           npx electron-builder --linux appimage --publish never \
             -c.directories.output=release-out \
-            -c.extraMetadata.main=main.js \
+            -c.extraMetadata.main=main.cjs \
             -c.extraMetadata.name="xmbplayer" \
             -c.files="dist/**/*" \
-            -c.files="main.js"
+            -c.files="main.cjs"
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v3
