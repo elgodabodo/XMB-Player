@@ -12,7 +12,7 @@ import {
   PS3BulletType,
   PS3FocusCube,
 } from './PS3Icons';
-import { PictureItem, Track } from '../types';
+import { PictureItem, Track, VideoItem } from '../types';
 import { soundFx } from '../services/soundFx';
 import { Heart, ChevronLeft } from 'lucide-react';
 
@@ -41,6 +41,7 @@ export interface XMBItemDef {
   bulletType?: PS3BulletType;
   track?: Track;
   picture?: PictureItem;
+  video?: VideoItem;
   isFolder?: boolean;
   coverUrl?: string;
   action?: () => void;
@@ -57,6 +58,7 @@ interface XMBNavigatorProps {
   onExecuteItem: (item: XMBItemDef) => void;
   onOpenContextMenu: (track: Track) => void;
   onOpenPictureContextMenu?: (picture: PictureItem) => void;
+  onOpenVideoContextMenu?: (video: VideoItem) => void;
   currentTrack: Track | null;
   isPlaying: boolean;
   subBreadcrumb?: string | null;
@@ -72,6 +74,7 @@ export const XMBNavigator: React.FC<XMBNavigatorProps> = ({
   onExecuteItem,
   onOpenContextMenu,
   onOpenPictureContextMenu,
+  onOpenVideoContextMenu,
   currentTrack,
   isPlaying,
   subBreadcrumb,
@@ -279,13 +282,15 @@ export const XMBNavigator: React.FC<XMBNavigatorProps> = ({
                   </span>
                 )}
 
-                {(item.track || item.picture) && isSelected && !isOutgoing && (
+                {(item.track || item.picture || item.video) && isSelected && !isOutgoing && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       soundFx.playOption();
                       if (item.picture) {
                         onOpenPictureContextMenu?.(item.picture);
+                      } else if (item.video) {
+                        onOpenVideoContextMenu?.(item.video);
                       } else if (item.track) {
                         onOpenContextMenu(item.track);
                       }

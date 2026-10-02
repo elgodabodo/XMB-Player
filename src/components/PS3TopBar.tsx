@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GstPipelineStatus, Track, UserProfile } from '../types';
-import { Sliders, HardDrive, Gamepad2, Volume2, VolumeX, Sparkles, Youtube, Minus, Plus } from 'lucide-react';
+import { Sliders, HardDrive, Gamepad2, Volume2, VolumeX, Minus, Plus } from 'lucide-react';
 import { soundFx } from '../services/soundFx';
 
 interface PS3TopBarProps {
@@ -8,7 +8,7 @@ interface PS3TopBarProps {
   currentTrack: Track | null;
   onOpenGstInspector: () => void;
   onOpenImport: () => void;
-  onOpenCloudServices: () => void;
+  onOpenCloudServices?: () => void;
   isMuted: boolean;
   volume: number;
   onVolumeChange: (vol: number) => void;
@@ -23,7 +23,6 @@ export const PS3TopBar: React.FC<PS3TopBarProps> = ({
   currentTrack,
   onOpenGstInspector,
   onOpenImport,
-  onOpenCloudServices,
   isMuted,
   volume,
   onVolumeChange,
@@ -77,21 +76,23 @@ export const PS3TopBar: React.FC<PS3TopBarProps> = ({
 
   return (
     <header className="relative z-20 flex items-center justify-between px-8 py-5 border-b border-white/10 select-none text-slate-200">
-      {/* Zone 1: Wordmark (Version text removed) */}
+      {/* Zone 1: Wordmark */}
       <div className="flex items-center gap-3">
         <span className="font-display text-xl tracking-wider text-white uppercase font-bold drop-shadow-[0_0_12px_rgba(255,255,255,0.6)]">
           XMBPlayer
         </span>
       </div>
 
-      {/* Zone 2: Audio & System Telemetry (PipeWire text removed) */}
+      {/* Zone 2: Audio & System Telemetry */}
       <div className="hidden md:flex items-center gap-3 text-xs text-white/60 font-mono">
         <span>
           {pipelineStatus.sampleRate / 1000}kHz / {pipelineStatus.bitDepth}bit
         </span>
         <span aria-hidden="true" className="text-white/30">·</span>
         <span className={pipelineStatus.state === 'GST_STATE_PLAYING' ? 'text-emerald-400' : 'text-amber-400'}>
-          {pipelineStatus.state.replace('GST_STATE_', '')}
+          {pipelineStatus.state !== 'GST_STATE_PLAYING' || !currentTrack
+            ? 'STOPPED'
+            : pipelineStatus.state.replace('GST_STATE_', '')}
         </span>
         {currentTrack && (
           <>
@@ -119,20 +120,6 @@ export const PS3TopBar: React.FC<PS3TopBarProps> = ({
           <span className="hidden sm:inline">GStreamer DSP</span>
         </button>
 
-        {/* Cloud Streaming / YouTube / Spotify */}
-        <button
-          type="button"
-          onClick={() => {
-            soundFx.playSelect();
-            onOpenCloudServices();
-          }}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 rounded transition-colors"
-          title="YouTube Music & Spotify Integration"
-        >
-          <Youtube className="w-3.5 h-3.5 text-rose-400" />
-          <span className="hidden sm:inline">Cloud Music</span>
-        </button>
-
         {/* Import Local Audio Files */}
         <button
           type="button"
@@ -147,7 +134,7 @@ export const PS3TopBar: React.FC<PS3TopBarProps> = ({
           <span className="hidden sm:inline">Import</span>
         </button>
 
-        {/* Volume Icon in Top Right with Dropdown Slider (5% steps) */}
+        {/* Volume Icon in Top Right with Dropdown Slider */}
         <div className="relative" ref={volumeDropdownRef}>
           <button
             type="button"
@@ -184,7 +171,7 @@ export const PS3TopBar: React.FC<PS3TopBarProps> = ({
                 </span>
               </div>
 
-              {/* Slider in steps of 5 */}
+              {/* Continuous Smooth Slider */}
               <div className="flex items-center gap-3 mb-3">
                 <button
                   type="button"
@@ -199,7 +186,7 @@ export const PS3TopBar: React.FC<PS3TopBarProps> = ({
                   type="range"
                   min="0"
                   max="100"
-                  step="5"
+                  step="1"
                   value={isMuted ? 0 : Math.round(volume * 100)}
                   onChange={(e) => {
                     const newVol = parseInt(e.target.value, 10) / 100;
@@ -238,7 +225,7 @@ export const PS3TopBar: React.FC<PS3TopBarProps> = ({
                 </button>
 
                 <div className="flex gap-1 text-[11px] font-mono text-white/40">
-                  <span>Step: 5%</span>
+                  <span>Smooth Output</span>
                 </div>
               </div>
             </div>

@@ -79,6 +79,18 @@ export interface PictureItem {
   year?: number;
 }
 
+export interface VideoItem {
+  id: string;
+  title: string;
+  videoUrl: string;
+  thumbnailUrl?: string;
+  duration?: number; // in seconds
+  format?: string; // MP4, WebM, MKV, etc.
+  resolution?: string; // 1080p, 4K, 720p, etc.
+  fileSize?: string;
+  dateAdded: string;
+}
+
 export type VisualizerMode = 
   | 'wave' 
   | 'earth_cosmos' 

@@ -20,6 +20,7 @@ import {
   SettingNotification,
   Track,
   UserProfile,
+  VideoItem,
   VisualizerMode,
   XMBTheme,
 } from './types';
@@ -27,6 +28,7 @@ import { gstEngine } from './services/gstreamerEngine';
 import { soundFx } from './services/soundFx';
 import { colorExtractor } from './services/colorExtractor';
 import { gameService } from './services/gameService';
+import { videoService } from './services/videoService';
 import {
   libraryStorage,
   INITIAL_TRACKS,
@@ -42,7 +44,9 @@ import { NowPlayingVisualizer } from './components/NowPlayingVisualizer';
 import { PS3ControllerHints } from './components/PS3ControllerHints';
 import { GStreamerInspectorModal } from './components/GStreamerInspectorModal';
 import { LocalImportModal } from './components/LocalImportModal';
-import { CloudServicesModal } from './components/CloudServicesModal';
+import { LocalVideoImportModal } from './components/LocalVideoImportModal';
+import { VideoPlayerModal } from './components/VideoPlayerModal';
+import { VideoContextMenu } from './components/VideoContextMenu';
 import { ContextMenu } from './components/ContextMenu';
 import { AddGameModal } from './components/AddGameModal';
 import { GameLaunchModal } from './components/GameLaunchModal';
@@ -63,13 +67,12 @@ export default function App() {
   const [isFullVisualizerView, setIsFullVisualizerView] = useState(false);
 
   // Audio Playback State
-  const [currentTrack, setCurrentTrack] = useState<Track | null>(INITIAL_TRACKS[0]);
+  const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(INITIAL_TRACKS[0]?.duration || 0);
+  const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.85);
   const [isMuted, setIsMuted] = useState(false);
-  const [crossfadeSec, setCrossfadeSec] = useState<number>(gstEngine.getCrossfadeDuration());
   const [pipelineStatus, setPipelineStatus] = useState<GstPipelineStatus>(
     gstEngine.getPipelineStatus()
   );
@@ -122,11 +125,20 @@ export default function App() {
   const [contextTrack, setContextTrack] = useState<Track | null>(null);
   const [contextMenuIndex, setContextMenuIndex] = useState(0);
 
+  // Video State
+  const [videos, setVideos] = useState<VideoItem[]>(videoService.getVideos());
+  const [isImportVideoModalOpen, setIsImportVideoModalOpen] = useState(false);
+  const [playingVideo, setPlayingVideo] = useState<VideoItem | null>(null);
+  const [contextVideo, setContextVideo] = useState<VideoItem | null>(null);
+  const [contextVideoIndex, setContextVideoIndex] = useState(0);
+
   const [isGstModalOpen, setIsGstModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
   const [isAddGameModalOpen, setIsAddGameModalOpen] = useState(false);
   const [activeLaunchGame, setActiveLaunchGame] = useState<CustomGameApp | null>(null);
+
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
 
   // Controller state
   const [controllerConnected, setControllerConnected] = useState(false);
@@ -141,12 +153,6 @@ export default function App() {
   const prevButtonsRef = useRef<{ [buttonIndex: number]: boolean }>({});
   const prevAxesRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  const refreshLibrary = useCallback(() => {
-    setTracks(libraryStorage.getTracks());
-    setPlaylists(libraryStorage.getPlaylists());
-    setGames(gameService.getGames());
-  }, []);
-
   // Setting Change Audio & Visual Feedback Helper
   const showSettingFeedback = useCallback(
     (title: string, detail: string, iconType: SettingNotification['iconType'] = 'check') => {
@@ -160,6 +166,19 @@ export default function App() {
     },
     []
   );
+
+  const refreshLibrary = useCallback(() => {
+    setTracks(libraryStorage.getTracks());
+    setPlaylists(libraryStorage.getPlaylists());
+    setGames(gameService.getGames());
+    setVideos(videoService.getVideos());
+  }, []);
+
+  const handleDeleteVideo = useCallback((videoId: string) => {
+    videoService.removeVideo(videoId);
+    refreshLibrary();
+    showSettingFeedback('Video Deleted', 'Removed video from local collection', 'check');
+  }, [refreshLibrary, showSettingFeedback]);
 
   const handleSaveProfile = useCallback(
     (newProfile: UserProfile) => {
@@ -314,26 +333,18 @@ export default function App() {
   }, [showSettingFeedback]);
 
   const handleVolumeChange = useCallback(
-    (newVol: number) => {
-      const clamped = Math.max(0, Math.min(1, Math.round(newVol * 100) / 100));
-      gstEngine.setVolume(clamped);
-      setVolume(clamped);
-      if (isMuted && clamped > 0) {
-        setIsMuted(false);
-      }
+    (newVolOrUpdater: number | ((prev: number) => number)) => {
+      setVolume((prev) => {
+        const next = typeof newVolOrUpdater === 'function' ? newVolOrUpdater(prev) : newVolOrUpdater;
+        const clamped = Math.max(0, Math.min(1, Math.round(next * 100) / 100));
+        gstEngine.setVolume(clamped);
+        volumeRef.current = clamped;
+        return clamped;
+      });
+      setIsMuted(false);
     },
-    [isMuted]
+    []
   );
-
-  const handleCrossfadeChange = useCallback((seconds: number) => {
-    gstEngine.setCrossfadeDuration(seconds);
-    setCrossfadeSec(seconds);
-    showSettingFeedback(
-      'Crossfade Updated',
-      seconds === 0 ? 'Crossfade playback disabled' : `Crossfade set to ${seconds} Seconds`,
-      'crossfade'
-    );
-  }, [showSettingFeedback]);
 
   // Library actions
   const handleToggleFavorite = useCallback((trackId: string) => {
@@ -373,15 +384,6 @@ export default function App() {
       if (currentSubFolder === 'music_settings') {
         return [
           {
-            id: 'ms-crossfade',
-            title: 'Crossfade Playback Settings',
-            subtitle: `Currently: ${crossfadeSec === 0 ? 'Disabled' : `${crossfadeSec} Seconds`}`,
-            badge: crossfadeSec > 0 ? `${crossfadeSec}s` : 'OFF',
-            bulletType: 'crossfade',
-            isFolder: true,
-            folderType: 'crossfade_options',
-          },
-          {
             id: 'ms-sink',
             title: 'Audio Sink Device',
             subtitle: `Active: ${pipelineStatus.sink.replace('sink', '').toUpperCase()}`,
@@ -398,18 +400,6 @@ export default function App() {
             action: () => setIsGstModalOpen(true),
           },
         ];
-      }
-
-      if (currentSubFolder === 'crossfade_options') {
-        const durations = [0, 2, 3, 4, 6, 8, 10, 12];
-        return durations.map((d) => ({
-          id: `cf-${d}`,
-          title: d === 0 ? 'Crossfade Off' : `${d} Seconds Crossfade`,
-          subtitle: crossfadeSec === d ? 'Current Setting (Active)' : 'Click to apply',
-          badge: crossfadeSec === d ? 'ACTIVE' : undefined,
-          bulletType: 'crossfade',
-          action: () => handleCrossfadeChange(d),
-        }));
       }
 
       if (currentSubFolder === 'display_settings') {
@@ -661,7 +651,7 @@ export default function App() {
           },
           {
             id: 'usr-host',
-            title: 'crossbeat@fedora-linux',
+            title: 'xmbplayer_pkg',
             subtitle: 'Host: PipeWire / GStreamer 1.24 Subsystem',
             bulletType: 'network',
           },
@@ -685,8 +675,8 @@ export default function App() {
           {
             id: 'set-music',
             title: 'Music Settings',
-            subtitle: `Crossfade: ${crossfadeSec === 0 ? 'Off' : `${crossfadeSec}s`} · Sink: ${pipelineStatus.sink.replace('sink', '')}`,
-            badge: crossfadeSec > 0 ? `${crossfadeSec}s` : 'OFF',
+            subtitle: `Sink: ${pipelineStatus.sink.replace('sink', '').toUpperCase()} · GStreamer 10-Band EQ`,
+            badge: pipelineStatus.sink.replace('sink', '').toUpperCase(),
             bulletType: 'music',
             isFolder: true,
             folderType: 'music_settings',
@@ -731,9 +721,12 @@ export default function App() {
           {
             id: 'set-network',
             title: 'Network Settings',
-            subtitle: 'LRCLIB Synced Lyrics API: Connected · YouTube / Spotify: Active',
+            subtitle: 'LRCLIB Synced Lyrics: Connected · MPRIS2 D-Bus: Active',
             bulletType: 'network',
-            action: () => setIsCloudModalOpen(true),
+            action: () => {
+              soundFx.playSelect();
+              showSettingFeedback('Network Settings', 'MPRIS2 Broadcast & LRCLIB Connected', 'check');
+            },
           },
         ];
 
@@ -819,12 +812,27 @@ export default function App() {
             action: () => setIsFullVisualizerView(true),
           },
           {
-            id: 'vid-ytm',
-            title: 'YouTube Music Video Streams',
-            subtitle: 'Explore trending streaming releases',
-            bulletType: 'network',
-            action: () => setIsCloudModalOpen(true),
+            id: 'vid-import',
+            title: 'Import Local Video Files',
+            subtitle: 'Drag & drop MP4, WebM, MKV, MOV, or AVI',
+            bulletType: 'plus',
+            action: () => {
+              soundFx.playSelect();
+              setIsImportVideoModalOpen(true);
+            },
           },
+          ...videos.map((v) => ({
+            id: v.id,
+            title: v.title,
+            subtitle: `${v.resolution || '1080p'} · ${v.format || 'MP4'} · ${v.fileSize || 'Local File'} · Press △ for Options`,
+            coverUrl: v.thumbnailUrl,
+            bulletType: 'display' as const,
+            video: v,
+            action: () => {
+              soundFx.playSelect();
+              setPlayingVideo(v);
+            },
+          })),
         ];
 
       case 'game':
@@ -846,16 +854,6 @@ export default function App() {
             badge: controllerType === 'ds4_ds5' ? 'DS4/DS5' : 'XINPUT',
             bulletType: 'wrench',
           },
-          {
-            id: 'gm-warp',
-            title: 'Starfield Warp Visualizer',
-            subtitle: 'High-speed cosmic hyperspace reaction',
-            bulletType: 'display',
-            action: () => {
-              setVisualizerMode('starfield_warp');
-              setIsFullVisualizerView(true);
-            },
-          },
           ...games.map((g) => ({
             id: g.id,
             title: g.title,
@@ -873,18 +871,21 @@ export default function App() {
       case 'network':
         return [
           {
-            id: 'net-ytm',
-            title: 'YouTube Music Streaming',
-            subtitle: 'Search and stream global tracks',
+            id: 'net-mpris',
+            title: 'Linux MPRIS2 D-Bus Broadcast',
+            subtitle: currentTrack ? `Broadcasting: ${currentTrack.title}` : 'Session Idle',
             bulletType: 'network',
-            action: () => setIsCloudModalOpen(true),
+            action: () => setIsGstModalOpen(true),
           },
           {
-            id: 'net-spotify',
-            title: 'Spotify Connect Hub',
-            subtitle: 'Sync Spotify playlists into Linux library',
+            id: 'net-dlna',
+            title: 'Local DLNA / UPnP Media Receiver',
+            subtitle: 'Local high-fidelity network audio rendering',
             bulletType: 'disc',
-            action: () => setIsCloudModalOpen(true),
+            action: () => {
+              soundFx.playSelect();
+              showSettingFeedback('Network Audio', 'DLNA / UPnP Media Receiver Ready', 'check');
+            },
           },
           {
             id: 'net-lyrics',
@@ -901,17 +902,27 @@ export default function App() {
       case 'friends':
         return [
           {
-            id: 'fr-mpris',
-            title: 'Linux MPRIS2 D-Bus Broadcast',
-            subtitle: currentTrack ? `Broadcasting: ${currentTrack.title}` : 'Session Idle',
-            bulletType: 'network',
-            action: () => setIsGstModalOpen(true),
+            id: 'fr-profile',
+            title: userProfile.username,
+            subtitle: userProfile.statusMessage || 'Online · PlayStation® Network',
+            coverUrl: userProfile.avatarUrl,
+            bulletType: 'user',
+            action: () => {
+              soundFx.playSelect();
+              setIsEditProfileModalOpen(true);
+            },
           },
           {
             id: 'fr-now',
             title: 'Now Playing Status',
-            subtitle: currentTrack ? `${currentTrack.artist} — ${currentTrack.title}` : 'No track',
+            subtitle: currentTrack ? `${currentTrack.artist} — ${currentTrack.title}` : 'Session Idle',
             bulletType: 'music',
+            action: () => {
+              if (currentTrack) {
+                soundFx.playSelect();
+                setIsFullVisualizerView(true);
+              }
+            },
           },
         ];
 
@@ -924,7 +935,6 @@ export default function App() {
     subFolderPayload,
     userProfile,
     theme,
-    crossfadeSec,
     pipelineStatus.sink,
     visualizerMode,
     controllerType,
@@ -932,11 +942,11 @@ export default function App() {
     tracks,
     playlists,
     games,
+    videos,
     galleryPictures,
     currentTrack,
     controllerConnected,
     handlePlayTrack,
-    handleCrossfadeChange,
     showSettingFeedback,
     refreshLibrary,
   ]);
@@ -1037,6 +1047,10 @@ export default function App() {
           e.preventDefault();
           if (viewingPictureIndex !== null) {
             setViewingPictureIndex(null);
+          } else if (playingVideo) {
+            setPlayingVideo(null);
+          } else if (contextVideo) {
+            setContextVideo(null);
           } else if (contextPicture) {
             setContextPicture(null);
           } else if (contextTrack) {
@@ -1053,8 +1067,8 @@ export default function App() {
             setIsGstModalOpen(false);
           } else if (isImportModalOpen) {
             setIsImportModalOpen(false);
-          } else if (isCloudModalOpen) {
-            setIsCloudModalOpen(false);
+          } else if (isImportVideoModalOpen) {
+            setIsImportVideoModalOpen(false);
           } else {
             handleGoBack();
           }
@@ -1068,6 +1082,10 @@ export default function App() {
             soundFx.playOption();
             setContextPictureIndex(0);
             setContextPicture(currentItem.picture);
+          } else if (currentItem?.video) {
+            soundFx.playOption();
+            setContextVideoIndex(0);
+            setContextVideo(currentItem.video);
           } else if (currentItem?.track) {
             soundFx.playOption();
             setContextMenuIndex(0);
@@ -1106,7 +1124,6 @@ export default function App() {
     contextTrack,
     isGstModalOpen,
     isImportModalOpen,
-    isCloudModalOpen,
     isAddGameModalOpen,
     isEditProfileModalOpen,
     activeLaunchGame,
@@ -1119,9 +1136,60 @@ export default function App() {
     handleNextTrack,
   ]);
 
+  // Gamepad type detector
+  const identifyGamepadType = useCallback((id: string): ControllerType => {
+    const s = (id || '').toLowerCase();
+    if (
+      s.includes('dualshock') ||
+      s.includes('dualsense') ||
+      s.includes('playstation') ||
+      s.includes('sony') ||
+      s.includes('ps5') ||
+      s.includes('ps4') ||
+      s.includes('ps3') ||
+      s.includes('054c') ||
+      s.includes('wireless controller')
+    ) {
+      return 'ds4_ds5';
+    }
+    return 'xinput';
+  }, []);
+
+  // Listen for window gamepad connect/disconnect events
+  useEffect(() => {
+    const handleConnected = (e: GamepadEvent) => {
+      setControllerConnected(true);
+      const type = identifyGamepadType(e.gamepad.id || '');
+      setControllerType(type);
+      showSettingFeedback(
+        'Controller Connected',
+        type === 'ds4_ds5'
+          ? 'PlayStation Controller Connected (DualShock 4 / DualSense)'
+          : 'Xbox / XInput Controller Connected',
+        'wrench'
+      );
+    };
+
+    const handleDisconnected = () => {
+      const gps = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
+      if (gps.length === 0) {
+        setControllerConnected(false);
+        showSettingFeedback('Controller Disconnected', 'Switched to Keyboard & Mouse layout', 'wrench');
+      } else {
+        const type = identifyGamepadType(gps[0]?.id || '');
+        setControllerType(type);
+      }
+    };
+
+    window.addEventListener('gamepadconnected', handleConnected);
+    window.addEventListener('gamepaddisconnected', handleDisconnected);
+    return () => {
+      window.removeEventListener('gamepadconnected', handleConnected);
+      window.removeEventListener('gamepaddisconnected', handleDisconnected);
+    };
+  }, [identifyGamepadType, showSettingFeedback]);
+
   // Compute context actions count for controller navigation
-  // Compute context actions count for controller navigation:
-  // 0: Play Now, 1: Volume, 2: Favorite, 3..: Playlists, then DSP, then Delete
   const contextMenuActionCount = useMemo(() => {
     if (!contextTrack) return 0;
     const customPlaylists = playlists.filter((p) => !p.isSystem);
@@ -1188,14 +1256,22 @@ export default function App() {
         if (contextTrack) {
           const customPlaylists = playlists.filter((p) => !p.isSystem);
 
-          // If focused on the Volume item (index 1), allow left/right to change volume in steps of 5!
+          // If focused on the Volume item (index 1), allow left/right to change volume in steps of 5 smoothly!
           if (contextMenuIndex === 1) {
-            if (leftPressed) {
-              soundFx.playTick();
-              handleVolumeChange(Math.max(0, Math.round((volume - 0.05) * 100) / 100));
-            } else if (rightPressed) {
-              soundFx.playTick();
-              handleVolumeChange(Math.min(1, Math.round((volume + 0.05) * 100) / 100));
+            const isLeftHeld = gp.buttons[14]?.pressed || gp.buttons[4]?.pressed || currX < -0.35;
+            const isRightHeld = gp.buttons[15]?.pressed || gp.buttons[5]?.pressed || currX > 0.35;
+            const now = Date.now();
+            const lastVolTime = (window as unknown as { _lastVolTime?: number })._lastVolTime || 0;
+            if (isLeftHeld || isRightHeld) {
+              if (leftPressed || rightPressed || now - lastVolTime > 120) {
+                (window as unknown as { _lastVolTime?: number })._lastVolTime = now;
+                soundFx.playTick();
+                if (isLeftHeld && !isRightHeld) {
+                  handleVolumeChange((prev) => Math.max(0, Math.round((prev - 0.05) * 100) / 100));
+                } else if (isRightHeld && !isLeftHeld) {
+                  handleVolumeChange((prev) => Math.min(1, Math.round((prev + 0.05) * 100) / 100));
+                }
+              }
             }
           }
 
@@ -1393,7 +1469,6 @@ export default function App() {
         currentTrack={currentTrack}
         onOpenGstInspector={() => setIsGstModalOpen(true)}
         onOpenImport={() => setIsImportModalOpen(true)}
-        onOpenCloudServices={() => setIsCloudModalOpen(true)}
         isMuted={isMuted}
         volume={volume}
         onVolumeChange={handleVolumeChange}
@@ -1446,6 +1521,10 @@ export default function App() {
               setContextPictureIndex(0);
               setContextPicture(pic);
             }}
+            onOpenVideoContextMenu={(vid) => {
+              setContextVideoIndex(0);
+              setContextVideo(vid);
+            }}
             currentTrack={currentTrack}
             isPlaying={isPlaying}
             subBreadcrumb={subBreadcrumb}
@@ -1495,6 +1574,8 @@ export default function App() {
         onExtractColorway={handleExtractColorway}
         selectedIndex={contextPictureIndex}
         onSelectedIndexChange={setContextPictureIndex}
+        controllerType={controllerType}
+        controllerConnected={controllerConnected}
       />
 
       {/* Custom Color Values Picker Modal */}
@@ -1548,12 +1629,34 @@ export default function App() {
         }}
       />
 
-      {/* Cloud Streaming (YouTube Music & Spotify) Modal */}
-      <CloudServicesModal
-        isOpen={isCloudModalOpen}
-        onClose={() => setIsCloudModalOpen(false)}
-        onPlayTrack={handlePlayTrack}
-        onTrackImported={refreshLibrary}
+      {/* Local Video File Drag & Drop Import Modal */}
+      <LocalVideoImportModal
+        isOpen={isImportVideoModalOpen}
+        onClose={() => setIsImportVideoModalOpen(false)}
+        onVideoImported={(video) => {
+          refreshLibrary();
+          setPlayingVideo(video);
+          showSettingFeedback('Video Imported', `Imported "${video.title}" to collection`, 'check');
+        }}
+      />
+
+      {/* Fullscreen Video Player Modal */}
+      <VideoPlayerModal
+        video={playingVideo}
+        onClose={() => setPlayingVideo(null)}
+      />
+
+      {/* Video Context Menu (△) */}
+      <VideoContextMenu
+        isOpen={Boolean(contextVideo)}
+        video={contextVideo}
+        onClose={() => setContextVideo(null)}
+        onPlay={(v) => setPlayingVideo(v)}
+        onDelete={handleDeleteVideo}
+        selectedIndex={contextVideoIndex}
+        onSelectedIndexChange={setContextVideoIndex}
+        controllerType={controllerType}
+        controllerConnected={controllerConnected}
       />
 
       {/* Triangle (△) Context Menu Side Panel - Fully Controller Navigable with Volume Steps */}
@@ -1573,6 +1676,8 @@ export default function App() {
         onVolumeChange={handleVolumeChange}
         isMuted={isMuted}
         onToggleMute={handleToggleMute}
+        controllerType={controllerType}
+        controllerConnected={controllerConnected}
       />
     </div>
   );

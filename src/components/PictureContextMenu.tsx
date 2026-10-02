@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { PictureItem } from '../types';
+import { ControllerType, PictureItem } from '../types';
 import { soundFx } from '../services/soundFx';
 import { Maximize2, User, Palette, X } from 'lucide-react';
 
@@ -12,6 +12,8 @@ interface PictureContextMenuProps {
   onExtractColorway: (picture: PictureItem) => void;
   selectedIndex?: number;
   onSelectedIndexChange?: (index: number) => void;
+  controllerType?: ControllerType;
+  controllerConnected?: boolean;
 }
 
 export const PictureContextMenu: React.FC<PictureContextMenuProps> = ({
@@ -23,6 +25,8 @@ export const PictureContextMenu: React.FC<PictureContextMenuProps> = ({
   onExtractColorway,
   selectedIndex,
   onSelectedIndexChange,
+  controllerType = 'ds4_ds5',
+  controllerConnected = false,
 }) => {
   const [internalIndex, setInternalIndex] = useState(0);
 
@@ -189,8 +193,12 @@ export const PictureContextMenu: React.FC<PictureContextMenuProps> = ({
                   </div>
 
                   {isFocused && (
-                    <span className="w-4 h-4 rounded-full border border-sky-400 text-sky-400 text-[10px] flex items-center justify-center font-bold shrink-0 ml-2">
-                      ✕
+                    <span className={`w-4 h-4 rounded-full border text-[10px] flex items-center justify-center font-bold shrink-0 ml-2 ${
+                      controllerType === 'ds4_ds5'
+                        ? 'border-sky-400 text-sky-400'
+                        : 'border-emerald-400 text-emerald-400'
+                    }`}>
+                      {controllerType === 'ds4_ds5' ? '✕' : 'A'}
                     </span>
                   )}
                 </button>
@@ -201,8 +209,14 @@ export const PictureContextMenu: React.FC<PictureContextMenuProps> = ({
 
         {/* Footer Hint */}
         <div className="pt-3 border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-white/50">
-          <span>D-Pad: Navigate</span>
-          <span>✕: Select · ○: Close</span>
+          <span>{controllerConnected ? 'D-Pad: Navigate' : '▲ ▼ / W S: Navigate'}</span>
+          <span>
+            {controllerConnected
+              ? controllerType === 'ds4_ds5'
+                ? '✕: Select · ○: Close'
+                : 'A: Select · B: Close'
+              : 'Enter: Select · ESC: Close'}
+          </span>
         </div>
       </div>
     </div>

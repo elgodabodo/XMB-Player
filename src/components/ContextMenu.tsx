@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Playlist, Track } from '../types';
-import { Play, ListPlus, Heart, Sliders, Trash2, X, Volume2, VolumeX, Minus, Plus } from 'lucide-react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { ControllerType, Playlist, Track } from '../types';
+import { Play, ListPlus, Heart, Sliders, Trash2, X, Volume2, VolumeX, Minus, Plus, ExternalLink } from 'lucide-react';
 import { soundFx } from '../services/soundFx';
+import { openMediaFile } from '../services/nativeBridge';
 
 interface ContextMenuProps {
   isOpen: boolean;
@@ -16,9 +17,11 @@ interface ContextMenuProps {
   selectedIndex?: number;
   onSelectedIndexChange?: (index: number) => void;
   volume?: number;
-  onVolumeChange?: (volume: number) => void;
+  onVolumeChange?: (volume: number | ((prev: number) => number)) => void;
   isMuted?: boolean;
   onToggleMute?: () => void;
+  controllerType?: ControllerType;
+  controllerConnected?: boolean;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -37,8 +40,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onVolumeChange,
   isMuted = false,
   onToggleMute,
+  controllerType = 'ds4_ds5',
+  controllerConnected = false,
 }) => {
   const [internalIndex, setInternalIndex] = useState(0);
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
 
   const activeIndex = selectedIndex !== undefined ? selectedIndex : internalIndex;
 
@@ -49,12 +56,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   const handleStepVolume = (deltaPct: number) => {
     soundFx.playTick();
-    const currPct = Math.round(volume * 100);
+    const currPct = Math.round(volumeRef.current * 100);
     const nextPct = Math.max(0, Math.min(100, currPct + deltaPct));
     onVolumeChange?.(nextPct / 100);
   };
 
-  // Compile list of actionable items for keyboard & controller navigation
+  // Compile list of actionable items
   const actions = useMemo(() => {
     if (!track) return [];
 
@@ -132,6 +139,20 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       },
     });
 
+    // Native App Open (Electron window.api.openFile)
+    if (track.audioUrl) {
+      list.push({
+        id: 'open-native',
+        label: 'Open with Native Linux App',
+        icon: <ExternalLink className="w-4 h-4 text-emerald-400" />,
+        execute: () => {
+          soundFx.playSelect();
+          openMediaFile(track.audioUrl || track.title);
+          onClose();
+        },
+      });
+    }
+
     // Delete
     list.push({
       id: 'delete',
@@ -148,7 +169,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     return list;
   }, [track, playlists, onPlay, onToggleFavorite, onAddToPlaylist, onInspectGst, onDeleteTrack, onClose, volume, isMuted, onToggleMute]);
 
-  // Keyboard navigation inside Context Menu (including Left/Right for volume)
+  // Keyboard navigation inside Context Menu
   useEffect(() => {
     if (!isOpen) return;
 
@@ -172,6 +193,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         case 'KeyA':
           if (actions[activeIndex]?.isVolume) {
             e.preventDefault();
+            e.stopPropagation();
             handleStepVolume(-5);
           }
           break;
@@ -180,6 +202,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         case 'KeyD':
           if (actions[activeIndex]?.isVolume) {
             e.preventDefault();
+            e.stopPropagation();
             handleStepVolume(5);
           }
           break;
@@ -202,9 +225,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, activeIndex, actions, onClose, volume]);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  });
 
   if (!isOpen || !track) return null;
 
@@ -229,6 +252,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               </span>
             </div>
             <button
+              type="button"
               onClick={() => {
                 soundFx.playCancel();
                 onClose();
@@ -277,7 +301,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                         setActiveIndex(idx);
                       }
                     }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                       isFocused
                         ? 'border-2 border-white bg-white/20 text-white font-bold shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-[1.02]'
                         : 'border border-transparent bg-white/5 text-white/80 hover:bg-white/10 hover:text-white'
@@ -288,23 +312,29 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                       <span className="truncate">{act.label}</span>
                     </div>
 
-                    {/* Step buttons for volume in steps of 5 */}
+                    {/* Step buttons for volume */}
                     <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
-                        onClick={() => handleStepVolume(-5)}
-                        className="p-1 rounded bg-white/10 hover:bg-white/25 text-white transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStepVolume(-5);
+                        }}
+                        className="p-1 rounded bg-white/10 hover:bg-white/30 text-white transition-colors cursor-pointer active:scale-90"
                         title="Decrease Volume (-5%)"
                       >
-                        <Minus className="w-3 h-3" />
+                        <Minus className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleStepVolume(5)}
-                        className="p-1 rounded bg-white/10 hover:bg-white/25 text-white transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStepVolume(5);
+                        }}
+                        className="p-1 rounded bg-white/10 hover:bg-white/30 text-white transition-colors cursor-pointer active:scale-90"
                         title="Increase Volume (+5%)"
                       >
-                        <Plus className="w-3 h-3" />
+                        <Plus className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -314,6 +344,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               return (
                 <button
                   key={act.id}
+                  type="button"
                   onClick={() => act.execute()}
                   onMouseEnter={() => {
                     if (activeIndex !== idx) {
@@ -321,7 +352,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                       setActiveIndex(idx);
                     }
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all text-left ${
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all text-left cursor-pointer ${
                     isFocused
                       ? 'border-2 border-white bg-white/20 text-white font-bold shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-[1.02]'
                       : 'border border-transparent bg-white/5 text-white/80 hover:bg-white/10 hover:text-white'
@@ -332,10 +363,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                     <span className="truncate">{act.label}</span>
                   </div>
 
-                  {/* Controller Action Prompt Icon */}
+                  {/* Action Prompt Icon */}
                   {isFocused && (
-                    <span className="w-4 h-4 rounded-full border border-sky-400 text-sky-400 text-[10px] flex items-center justify-center font-bold shrink-0 ml-2">
-                      ✕
+                    <span className={`w-4 h-4 rounded-full border text-[10px] flex items-center justify-center font-bold shrink-0 ml-2 ${
+                      controllerType === 'ds4_ds5'
+                        ? 'border-sky-400 text-sky-400'
+                        : 'border-emerald-400 text-emerald-400'
+                    }`}>
+                      {controllerType === 'ds4_ds5' ? '✕' : 'A'}
                     </span>
                   )}
                 </button>
@@ -344,10 +379,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           </div>
         </div>
 
-        {/* Controller Navigation Hint Footer */}
+        {/* Navigation Hint Footer */}
         <div className="pt-3 border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-white/50">
-          <span>D-Pad: Navigate / ◄ ►: Vol ±5%</span>
-          <span>✕: Select · ○: Close</span>
+          <span>{controllerConnected ? 'D-Pad: Navigate · ◄ ►: Vol ±5%' : '▲ ▼ / W S: Navigate · Enter: Select'}</span>
+          <span>
+            {controllerConnected
+              ? controllerType === 'ds4_ds5'
+                ? '✕: Select · ○: Close'
+                : 'A: Select · B: Close'
+              : 'Enter: Select · ESC: Close'}
+          </span>
         </div>
       </div>
     </div>

@@ -21,7 +21,7 @@ export const NowPlayingMiniJacket: React.FC<NowPlayingMiniJacketProps> = ({
   return (
     <aside
       aria-label="Now Playing"
-      className="fixed bottom-5 right-7 z-30 flex items-center gap-3 p-2 pr-4 bg-black/75 hover:bg-black/90 backdrop-blur-md border border-white/20 rounded-xl shadow-[0_4px_24px_rgba(0,0,0,0.8)] transition-all duration-200 select-none group"
+      className="fixed bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 p-2 pr-4 bg-black/20 hover:bg-black/35 backdrop-blur-md border border-white/10 rounded-xl shadow-[0_4px_24px_rgba(0,0,0,0.5)] transition-all duration-200 select-none group"
     >
       {/* Album Cover Art / Disc Jacket */}
       <button

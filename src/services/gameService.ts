@@ -4,49 +4,9 @@
  */
 
 import { CustomGameApp } from '../types';
+import { launchApp } from './nativeBridge';
 
-export const INITIAL_GAMES: CustomGameApp[] = [
-  {
-    id: 'game-rpcs3',
-    title: 'RPCS3 - PlayStation 3 Emulator',
-    execPath: '/usr/bin/rpcs3',
-    args: '--no-gui',
-    category: 'emulator',
-    description: 'Open-source Sony PlayStation 3 emulator and debugger',
-    coverUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400&q=80',
-    lastPlayed: 'Yesterday',
-  },
-  {
-    id: 'game-retroarch',
-    title: 'RetroArch Universal Emulation',
-    execPath: '/usr/bin/retroarch',
-    args: '-v',
-    category: 'retro',
-    description: 'Frontend for emulators, game engines, and media players',
-    coverUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&q=80',
-    lastPlayed: '2 days ago',
-  },
-  {
-    id: 'game-steam',
-    title: 'Steam Big Picture Mode',
-    execPath: 'steam',
-    args: '-gamepadui',
-    category: 'steam',
-    description: 'Valve Steam gaming client for 10-foot television interface',
-    coverUrl: 'https://images.unsplash.com/photo-1612287233207-6b4df30b42c4?w=400&q=80',
-    lastPlayed: 'Today',
-  },
-  {
-    id: 'game-pcsx2',
-    title: 'PCSX2 - PlayStation 2 Core',
-    execPath: '/usr/bin/pcsx2-qt',
-    args: '-fullscreen',
-    category: 'emulator',
-    description: 'PlayStation 2 video game console emulator for Linux',
-    coverUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400&q=80',
-    lastPlayed: 'Last week',
-  },
-];
+export const INITIAL_GAMES: CustomGameApp[] = [];
 
 class GameService {
   private games: CustomGameApp[] = [];
@@ -60,13 +20,18 @@ class GameService {
     try {
       const stored = localStorage.getItem('xmb_custom_games');
       if (stored) {
-        this.games = JSON.parse(stored);
+        const parsed: CustomGameApp[] = JSON.parse(stored);
+        // Filter out premade sample games
+        this.games = parsed.filter(
+          (g) => !['game-rpcs3', 'game-retroarch', 'game-steam', 'game-pcsx2'].includes(g.id)
+        );
+        this.saveGames();
       } else {
-        this.games = [...INITIAL_GAMES];
+        this.games = [];
         this.saveGames();
       }
     } catch {
-      this.games = [...INITIAL_GAMES];
+      this.games = [];
     }
   }
 
@@ -98,10 +63,15 @@ class GameService {
     }
   }
 
+  public async launchGame(game: CustomGameApp): Promise<{ success: boolean; output?: string }> {
+    this.recordLaunch(game.id);
+    return await launchApp(game.execPath, game.args);
+  }
+
   public recordLaunch(id: string) {
-    const index = this.games.findIndex((g) => g.id === id);
-    if (index !== -1) {
-      this.games[index].lastPlayed = 'Just now';
+    const g = this.games.find((item) => item.id === id);
+    if (g) {
+      g.lastPlayed = 'Just now';
       this.saveGames();
     }
   }

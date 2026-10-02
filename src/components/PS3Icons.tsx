@@ -165,6 +165,7 @@ export type PS3BulletType =
   | 'crossfade'
   | 'palette'
   | 'lyrics'
+  | 'user'
   | 'plus';
 
 interface BulletProps {
@@ -268,6 +269,12 @@ export const PS3BulletIcon: React.FC<BulletProps> = ({
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           <line x1="8" y1="9" x2="16" y2="9" />
           <line x1="8" y1="13" x2="13" y2="13" />
+        </svg>
+      )}
+
+      {type === 'user' && (
+        <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
         </svg>
       )}
 

@@ -49,7 +49,6 @@ class GStreamerEngine {
   private underrunCount = 0;
   private cpuUsage = 1.8;
   private customEq: EqualizerBands = { ...EQ_PRESETS.Flat };
-  private crossfadeDuration: number = 3; // in seconds (0 = off)
 
   // Listeners
   private stateListeners: Set<StateChangeListener> = new Set();
@@ -160,32 +159,8 @@ class GStreamerEngine {
     }
   }
 
-  public setCrossfadeDuration(seconds: number) {
-    this.crossfadeDuration = Math.max(0, Math.min(12, seconds));
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('crossbeat_crossfade', this.crossfadeDuration.toString());
-    }
-  }
-
-  public getCrossfadeDuration(): number {
-    return this.crossfadeDuration;
-  }
-
   public async playTrack(track: Track) {
     this.initAudioContext();
-    const wasPlaying = this.gstState === 'GST_STATE_PLAYING';
-
-    // If crossfade enabled and audio was playing, perform smooth crossfade transition
-    if (wasPlaying && this.crossfadeDuration > 0 && this.gainNode && this.audioCtx) {
-      const now = this.audioCtx.currentTime;
-      const targetVol = this.isMuted ? 0 : this.volume;
-      this.gainNode.gain.cancelScheduledValues(now);
-      this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now);
-      // Quick dip & ramp crossfade
-      this.gainNode.gain.linearRampToValueAtTime(0.001, now + this.crossfadeDuration * 0.4);
-      this.gainNode.gain.linearRampToValueAtTime(targetVol, now + this.crossfadeDuration);
-    }
-
     this.stopSynthPlayback();
     this.currentTrack = track;
     this.currentTime = 0;

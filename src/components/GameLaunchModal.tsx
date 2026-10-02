@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CustomGameApp } from '../types';
 import { soundFx } from '../services/soundFx';
+import { launchApp } from '../services/nativeBridge';
 import { Gamepad2, X, Terminal, Cpu, Play, Square, Activity } from 'lucide-react';
 
 interface GameLaunchModalProps {
@@ -12,11 +13,20 @@ export const GameLaunchModal: React.FC<GameLaunchModalProps> = ({ game, onClose 
   const [stage, setStage] = useState<'boot' | 'running'>('boot');
   const [pid] = useState(() => Math.floor(Math.random() * 8000) + 2000);
   const [fps, setFps] = useState(60);
+  const [ipcOutput, setIpcOutput] = useState<string | null>(null);
 
   useEffect(() => {
     if (game) {
       soundFx.playGameBoot();
       setStage('boot');
+      
+      // Dispatch real native call via Electron window.api
+      launchApp(game.execPath, game.args).then((res) => {
+        if (res?.output) {
+          setIpcOutput(res.output);
+        }
+      });
+
       const timer = setTimeout(() => {
         setStage('running');
       }, 1200);
@@ -123,9 +133,13 @@ export const GameLaunchModal: React.FC<GameLaunchModalProps> = ({ game, onClose 
 
               {/* Shell output log */}
               <div className="p-3 bg-black/60 rounded border border-white/10 font-mono text-[11px] text-white/70 space-y-1">
-                <div className="text-white/40"># stdout / stderr</div>
+                <div className="text-white/40"># stdout / stderr (Electron window.api)</div>
                 <div className="text-emerald-400">$ {game.execPath} {game.args || ''}</div>
-                <div>[INFO] Initialized Vulkan 1.3 physical device</div>
+                {ipcOutput ? (
+                  <div className="text-sky-300">[HOST IPC] {ipcOutput}</div>
+                ) : (
+                  <div>[INFO] Initialized Vulkan 1.3 physical device</div>
+                )}
                 <div>[INFO] PipeWire low-latency sound stream opened (latency: 3.2ms)</div>
                 <div>[INFO] Gamepad DualSense mapped to /dev/input/js0</div>
               </div>
